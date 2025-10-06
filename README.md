@@ -58,7 +58,7 @@ You will need to configure your secrets (`CF_AI_API_KEY`) in your Cloudflare das
 
 Alternatively, deploy directly from your GitHub repository with a single click:
 
-[cloudflarebutton]
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ModularHallway100/Harmony-1)
 
 ## 📂 Project Structure
 
