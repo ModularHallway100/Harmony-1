@@ -6,6 +6,8 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
 import '@/index.css';
+import ClerkProvider from '@/components/auth/ClerkProvider';
+import ClerkAuthWrapper from '@/contexts/ClerkUserContext';
 import MainLayout from '@/components/layout/MainLayout';
 import { HomePage } from '@/pages/HomePage';
 import { PromptRewriterPage } from '@/pages/PromptRewriterPage';
@@ -16,6 +18,8 @@ import { SearchPage } from '@/pages/SearchPage';
 import { CreateArtistPage } from '@/pages/CreateArtistPage';
 import { UserArtistPage } from '@/pages/UserArtistPage';
 import SettingsPage from '@/pages/SettingsPage';
+import SignInPage from '@/pages/SignInPage';
+import SignUpPage from '@/pages/SignUpPage';
 const router = createBrowserRouter([
   {
     path: "/",
@@ -33,12 +37,26 @@ const router = createBrowserRouter([
       { path: "settings", element: <SettingsPage /> },
     ],
   },
+  {
+    path: "/sign-in",
+    element: <SignInPage />,
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/sign-up",
+    element: <SignUpPage />,
+    errorElement: <RouteErrorBoundary />,
+  },
 ]);
 // Do not touch this code
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <RouterProvider router={router} />
+      <ClerkProvider>
+        <ClerkAuthWrapper>
+          <RouterProvider router={router} />
+        </ClerkAuthWrapper>
+      </ClerkProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

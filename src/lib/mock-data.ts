@@ -4,6 +4,7 @@ export interface Track {
   artistId: string;
   duration: number; // in seconds
   coverArt: string;
+  audioUrl?: string; // Optional URL for the audio file
 }
 export interface Artist {
   id: string;
