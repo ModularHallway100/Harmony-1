@@ -21,12 +21,55 @@
     "test:coverage": "jest --coverage",
     "test:coverage:frontend": "jest --config jest.frontend.config.js --coverage --coverageReporters=text --coverageReporters=lcov --coverageReporters=html --coverageReporters=cobertura --coverageReporters=json-summary",
     "test:coverage:backend": "jest --config jest.backend.config.js --coverage --coverageReporters=text --coverageReporters=lcov --coverageReporters=html --coverageReporters=cobertura --coverageReporters=json-summary",
+    "test:coverage:integration": "jest --config jest.integration.config.js --coverage --coverageReporters=text --coverageReporters=lcov --coverageReporters=html --coverageReporters=cobertura --coverageReporters=json-summary",
+    "test:coverage:performance": "jest --config jest.performance.config.js --coverage --coverageReporters=text --coverageReporters=lcov --coverageReporters=html --coverageReporters=cobertura --coverageReporters=json-summary",
+    
     "test:frontend": "jest --config jest.frontend.config.js",
+    "test:frontend:watch": "jest --config jest.frontend.config.js --watch",
+    "test:frontend:coverage": "jest --config jest.frontend.config.js --coverage",
+    "test:frontend:performance": "jest --config jest.frontend.config.js --performance",
+    
     "test:backend": "jest --config jest.backend.config.js",
+    "test:backend:watch": "jest --config jest.backend.config.js --watch",
+    "test:backend:coverage": "jest --config jest.backend.config.js --coverage",
+    "test:backend:performance": "jest --config jest.backend.config.js --performance",
+    
     "test:integration": "jest --config jest.integration.config.js",
+    "test:integration:watch": "jest --config jest.integration.config.js --watch",
+    "test:integration:coverage": "jest --config jest.integration.config.js --coverage",
+    
     "test:e2e": "jest --config jest.e2e.config.js",
+    "test:e2e:watch": "jest --config jest.e2e.config.js --watch",
+    "test:e2e:coverage": "jest --config jest.e2e.config.js --coverage",
+    
     "test:performance": "jest --config jest.performance.config.js",
+    "test:performance:watch": "jest --config jest.performance.config.js --watch",
+    "test:performance:load": "jest --config jest.performance.config.js --performance --loadTest",
+    "test:performance:stress": "jest --config jest.performance.config.js --performance --stressTest",
+    
     "test:visual": "jest --config jest.visual.config.js",
+    "test:visual:watch": "jest --config jest.visual.config.js --watch",
+    "test:visual:percy": "percy exec -- jest --config jest.visual.config.js",
+    "test:visual:applitools": "jest --config jest.visual.config.js --visual --applitools",
+    "test:visual:local": "jest --config jest.visual.config.js --visual --local",
+    
+    "test:all": "npm run test:frontend && npm run test:backend && npm run test:integration && npm run test:e2e",
+    "test:all:coverage": "npm run test:coverage:frontend && npm run test:coverage:backend && npm run test:coverage:integration && npm run test:coverage:performance",
+    
+    "test:ci": "npm run test:coverage:frontend && npm run test:coverage:backend && npm run test:integration && npm run test:performance",
+    "test:ci:visual": "npm run test:visual:percy",
+    
+    "test:smoke": "npm run test:frontend -- --testNamePattern=\"Smoke\" && npm run test:backend -- --testNamePattern=\"Smoke\" && npm run test:e2e -- --testNamePattern=\"Smoke\"",
+    "test:regression": "npm run test:all",
+    "test:sanity": "npm run test:frontend -- --testNamePattern=\"Sanity\" && npm run test:backend -- --testNamePattern=\"Sanity\"",
+    
+    "test:report": "mkdir -p test-results && npm run test:coverage:frontend -- --coverageReporters=text --coverageReporters=lcov --coverageReporters=html --coverageReporters=cobertura --coverageReporters=json-summary --coverageDirectory=test-results/coverage && npm run test:coverage:backend -- --coverageReporters=text --coverageReporters=lcov --coverageReporters=html --coverageReporters=cobertura --coverageReporters=json-summary --coverageDirectory=test-results/coverage && npm run test:coverage:integration -- --coverageReporters=text --coverageReporters=lcov --coverageReporters=html --coverageReporters=cobertura --coverageReporters=json-summary --coverageDirectory=test-results/coverage && npm run test:coverage:performance -- --coverageReporters=text --coverageReporters=lcov --coverageReporters=html --coverageReporters=cobertura --coverageReporters=json-summary --coverageDirectory=test-results/coverage",
+    
+    "test:clean": "rm -rf coverage test-results .jest",
+    
+    "test:debug": "node --inspect-brk ./node_modules/.bin/jest --runInBand",
+    "test:debug:frontend": "node --inspect-brk ./node_modules/.bin/jest --config jest.frontend.config.js --runInBand",
+    "test:debug:backend": "node --inspect-brk ./node_modules/.bin/jest --config jest.backend.config.js --runInBand",
     
     "db:migrate": "node server/scripts/migrate.js",
     "db:seed": "node server/scripts/seed.js",
@@ -38,7 +81,34 @@
     "test:all": "npm run test:frontend && npm run test:backend && npm run test:integration && npm run test:e2e",
     
     "visual:regression": "percy exec -- jest --config jest.visual.config.js",
-    "performance:test": "k6 run tests/performance/load-test.js"
+    "visual:regression:local": "jest --config jest.visual.config.js --visual --local",
+    "visual:regression:applitools": "jest --config jest.visual.config.js --visual --applitools",
+    "visual:regression:compare": "jest-visual-diff --config jest.visual.config.js",
+    
+    "performance:test": "k6 run tests/performance/load-test.js",
+    "performance:test:api": "k6 run tests/performance/api-test.js",
+    "performance:test:frontend": "k6 run tests/performance/frontend-test.js",
+    "performance:test:load": "k6 run tests/performance/load-test.js",
+    "performance:test:stress": "k6 run tests/performance/stress-test.js",
+    "performance:test:spike": "k6 run tests/performance/spike-test.js",
+    "performance:test:soak": "k6 run tests/performance/soak-test.js",
+    "performance:test:volume": "k6 run tests/performance/volume-test.js",
+    "performance:benchmark": "node tests/performance/benchmark.js",
+    "profile:cpu": "node --prof tests/performance/cpu-profile.js",
+    "profile:memory": "node --inspect tests/performance/memory-profile.js",
+    "profile:heap": "node --inspect tests/performance/heap-profile.js",
+    "profile:network": "node --inspect tests/performance/network-profile.js",
+    
+    "test:visual:report": "mkdir -p test-results/visual && npm run test:visual -- --testResultsProcessor=jest-junit --testResultsProcessor=jest-html-reporter --testResultsProcessor=jest-visual-reporter",
+    "test:performance:report": "mkdir -p test-results/performance && npm run test:performance -- --testResultsProcessor=jest-junit --testResultsProcessor=jest-html-reporter --testResultsProcessor=jest-performance-reporter",
+    
+    "test:clean:visual": "rm -rf test-results/visual diffs screenshots",
+    "test:clean:performance": "rm -rf test-results/performance .k6",
+    
+    "test:setup:visual": "npm install -g percy @percy/jest jest-image-snapshot",
+    "test:setup:performance": "npm install -g k6",
+    
+    "test:docs": "echo 'Testing Documentation:' && echo '1. Frontend Testing: https://docs.harmony.com/testing/frontend' && echo '2. Backend Testing: https://docs.harmony.com/testing/backend' && echo '3. Integration Testing: https://docs.harmony.com/testing/integration' && echo '4. E2E Testing: https://docs.harmony.com/testing/e2e' && echo '5. Performance Testing: https://docs.harmony.com/testing/performance' && echo '6. Visual Testing: https://docs.harmony.com/testing/visual'"
   },
   "dependencies": {
     "@clerk/clerk-sdk-node": "^4.13.23",

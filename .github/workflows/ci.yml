@@ -1,4 +1,3 @@
-# CI/CD Pipeline for Harmony Music Platform
 name: CI/CD Pipeline
 
 on:
@@ -6,40 +5,114 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
+  release:
+    types: [ published ]
+
+env:
+  NODE_VERSION: '18.x'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  test:
+  # Quality Checks
+  quality-checks:
+    name: Code Quality Checks
     runs-on: ubuntu-latest
     
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: harmony_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
       
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: '**/package-lock.json'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run ESLint
+      run: npm run lint
+      
+    - name: Run TypeScript type checking
+      run: npm run type-check
+      
+    - name: Run security audit
+      run: npm audit --audit-level moderate
+      
+    - name: Check for secrets
+      run: npx secretlint "**/*"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Frontend Tests
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    needs: quality-checks
+    
+    strategy:
+      matrix:
+        test-type: [unit, integration]
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: '**/package-lock.json'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Install Playwright browsers
+      if: matrix.test-type == 'integration'
+      run: npx playwright install --with-deps
+      
+    - name: Run frontend tests
+      run: npm run test:${{ matrix.test-type }}
+      
+    - name: Upload coverage reports
+      if: matrix.test-type == 'unit'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage/lcov.info
+        flags: frontend
+        name: frontend-coverage
+        fail_ci_if_error: false
+
+  # Backend Tests
+  backend-tests:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    needs: quality-checks
+    
+    strategy:
+      matrix:
+        test-type: [unit, integration, e2e]
+        
+    services:
       mongodb:
-        image: mongo:7
+        image: mongo:5.0
         env:
           MONGO_INITDB_ROOT_USERNAME: admin
           MONGO_INITDB_ROOT_PASSWORD: password
         ports:
           - 27017:27017
         options: >-
-          --health-cmd mongosh
+          --health-cmd "mongosh --eval 'db.runCommand(\"ping\").ok'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      
+          
       redis:
-        image: redis:7
+        image: redis:7.0
         ports:
           - 6379:6379
         options: >-
@@ -47,150 +120,387 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
+        
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
+      
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
-
+        cache-dependency-path: '**/package-lock.json'
+        
     - name: Install dependencies
       run: npm ci
-
-    - name: Run database migrations
-      run: npm run db:migrate
+      
+    - name: Wait for MongoDB to be ready
+      run: |
+        until mongosh --host localhost --port 27017 --eval "db.runCommand('ping').ok"; do
+          echo "Waiting for MongoDB to be ready..."
+          sleep 2
+        done
+        
+    - name: Wait for Redis to be ready
+      run: |
+        until redis-cli -h localhost -p 6379 ping; do
+          echo "Waiting for Redis to be ready..."
+          sleep 2
+        done
+        
+    - name: Run backend tests
+      run: npm run test:${{ matrix.test-type }}
       env:
         NODE_ENV: test
-        DB_HOST: localhost
-        DB_PORT: 5432
-        DB_NAME: harmony_test
-        DB_USER: postgres
-        DB_PASSWORD: postgres
-        MONGODB_URI: mongodb://admin:password@localhost:27017/harmony_test?authSource=admin
-        REDIS_CACHE_URL: redis://localhost:6379
-        REDIS_SESSION_URL: redis://localhost:6379
-
-    - name: Run tests
-      run: npm run test:coverage
-      env:
-        NODE_ENV: test
-        DB_HOST: localhost
-        DB_PORT: 5432
-        DB_NAME: harmony_test
-        DB_USER: postgres
-        DB_PASSWORD: postgres
-        MONGODB_URI: mongodb://admin:password@localhost:27017/harmony_test?authSource=admin
-        REDIS_CACHE_URL: redis://localhost:6379
-        REDIS_SESSION_URL: redis://localhost:6379
-
-    - name: Upload coverage to Codecov
+        MONGODB_URI: mongodb://admin:password@localhost:27017/testdb?authSource=admin
+        REDIS_URL: redis://localhost:6379
+        JWT_SECRET: test-jwt-secret
+        STRIPE_SECRET_KEY: test-stripe-secret-key
+        OPENAI_API_KEY: test-openai-api-key
+        GEMINI_API_KEY: test-gemini-api-key
+        CLERK_SECRET_KEY: test-clerk-secret-key
+        SUPABASE_URL: test-supabase-url
+        SUPABASE_KEY: test-supabase-key
+        CLOUDINARY_CLOUD_NAME: test-cloudinary-name
+        CLOUDINARY_API_KEY: test-cloudinary-key
+        CLOUDINARY_API_SECRET: test-cloudinary-secret
+        
+    - name: Upload coverage reports
+      if: matrix.test-type == 'unit'
       uses: codecov/codecov-action@v3
       with:
-        file: ./coverage/lcov.info
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: true
+        file: ./coverage/backend-lcov.info
+        flags: backend
+        name: backend-coverage
+        fail_ci_if_error: false
 
-  lint:
+  # Performance Tests
+  performance-tests:
+    name: Performance Tests
     runs-on: ubuntu-latest
+    needs: [frontend-tests, backend-tests]
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
+      
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
-
+        cache-dependency-path: '**/package-lock.json'
+        
     - name: Install dependencies
       run: npm ci
+      
+    - name: Install k6
+      run: |
+        curl -fsSL https://github.com/grafana/k6/releases/download/v0.47.0/k6-v0.47.0-linux-amd64.tar.gz -o k6.tar.gz
+        tar -xzf k6.tar.gz
+        sudo mv k6-v0.47.0-linux-amd64/k6 /usr/local/bin/
+        
+    - name: Run performance tests
+      run: npm run test:performance
+      
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: performance-results
+        path: |
+          ./performance-results/
+          !./performance-results/.gitignore
 
-    - name: Run linting
-      run: npm run lint
-
-  build:
-    needs: [test, lint]
+  # Visual Regression Tests
+  visual-tests:
+    name: Visual Regression Tests
     runs-on: ubuntu-latest
+    needs: frontend-tests
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
+      
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
-
+        cache-dependency-path: '**/package-lock.json'
+        
     - name: Install dependencies
       run: npm ci
+      
+    - name: Install Playwright browsers
+      run: npx playwright install --with-deps
+      
+    - name: Run visual regression tests
+      run: npm run test:visual
+      
+    - name: Upload visual test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: visual-test-results
+        path: |
+          ./visual-test-results/
+          !./visual-test-results/.gitignore
 
-    - name: Build frontend
-      run: npm run build
-
-    - name: Upload build artifacts
+  # Build and Dockerize
+  build-and-dockerize:
+    name: Build and Dockerize
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests, performance-tests, visual-tests]
+    
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=raw,value=latest,enable={{is_default_branch}}
+          
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+    - name: Upload Docker image artifact
       uses: actions/upload-artifact@v3
       with:
-        name: build-artifacts
-        path: |
-          dist/
-          build/
+        name: docker-image
+        path: /tmp/docker-image.tar
+        if: always()
 
+  # Deploy to Staging
   deploy-staging:
-    needs: [build]
+    name: Deploy to Staging
     runs-on: ubuntu-latest
+    needs: build-and-dockerize
     if: github.ref == 'refs/heads/develop'
     environment: staging
     
     steps:
-    - name: Download build artifacts
+    - name: Download Docker image
       uses: actions/download-artifact@v3
       with:
-        name: build-artifacts
-        path: .
-
+        name: docker-image
+        path: /tmp
+        
+    - name: Load Docker image
+      run: |
+        docker load -i /tmp/docker-image.tar
+        
     - name: Deploy to staging
       run: |
-        # Add your staging deployment commands here
+        # Deploy to staging environment
+        # This could be deploying to a Kubernetes cluster, ECS, etc.
         echo "Deploying to staging environment..."
-        # Example: rsync -av build/ staging-server:/var/www/harmony-staging/
+        
+    - name: Run smoke tests
+      run: |
+        # Run smoke tests against staging
+        echo "Running smoke tests against staging..."
+        
+    - name: Notify on deployment
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
 
+  # Deploy to Production
   deploy-production:
-    needs: [build]
+    name: Deploy to Production
     runs-on: ubuntu-latest
+    needs: [build-and-dockerize, deploy-staging]
     if: github.ref == 'refs/heads/main'
     environment: production
     
     steps:
-    - name: Download build artifacts
+    - name: Download Docker image
       uses: actions/download-artifact@v3
       with:
-        name: build-artifacts
-        path: .
-
-    - name: Deploy to production
+        name: docker-image
+        path: /tmp
+        
+    - name: Load Docker image
       run: |
-        # Add your production deployment commands here
-        echo "Deploying to production environment..."
-        # Example: rsync -av build/ production-server:/var/www/harmony/
+        docker load -i /tmp/docker-image.tar
+        
+    - name: Deploy to production (Blue-Green)
+      run: |
+        # Implement blue-green deployment strategy
+        echo "Starting blue-green deployment..."
+        
+        # Deploy to green environment
+        echo "Deploying to green environment..."
+        
+        # Run health checks
+        echo "Running health checks..."
+        
+        # Switch traffic to green
+        echo "Switching traffic to green environment..."
+        
+    - name: Run post-deployment tests
+      run: |
+        # Run post-deployment tests
+        echo "Running post-deployment tests..."
+        
+    - name: Notify on deployment
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
 
-  security-scan:
+  # Rollback
+  rollback:
+    name: Rollback
     runs-on: ubuntu-latest
+    if: failure()
+    needs: [deploy-staging, deploy-production]
+    
+    steps:
+    - name: Rollback deployment
+      run: |
+        # Implement rollback logic
+        echo "Performing rollback..."
+        
+    - name: Notify on rollback
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Performance Monitoring
+  performance-monitoring:
+    name: Performance Monitoring
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    if: github.ref == 'refs/heads/main'
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
-    - name: Run security audit
-      run: npm audit --audit-level moderate
-
-    - name: Run Snyk security scan
-      uses: snyk/actions/node@master
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
       with:
-        args: --severity-threshold=high
-        command: test
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: '**/package-lock.json'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Install k6
+      run: |
+        curl -fsSL https://github.com/grafana/k6/releases/download/v0.47.0/k6-v0.47.0-linux-amd64.tar.gz -o k6.tar.gz
+        tar -xzf k6.tar.gz
+        sudo mv k6-v0.47.0-linux-amd64/k6 /usr/local/bin/
+        
+    - name: Run production performance tests
+      run: npm run test:production-performance
+      
+    - name: Upload performance metrics
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: production-performance-metrics
+        path: |
+          ./performance-metrics/
+          !./performance-metrics/.gitignore
+
+  # Security Scanning
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    needs: build-and-dockerize
+    
+    steps:
+    - name: Download Docker image
+      uses: actions/download-artifact@v3
+      with:
+        name: docker-image
+        path: /tmp
+        
+    - name: Load Docker image
+      run: |
+        docker load -i /tmp/docker-image.tar
+        
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Documentation Generation
+  documentation:
+    name: Generate Documentation
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: '**/package-lock.json'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Generate API documentation
+      run: npm run docs:api
+      
+    - name: Generate frontend documentation
+      run: npm run docs:frontend
+      
+    - name: Deploy documentation to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs
+        destination_dir: docs

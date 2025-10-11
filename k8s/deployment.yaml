@@ -1,0 +1,886 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harmony-frontend-deployment
+  namespace: harmony
+  labels:
+    app: harmony-frontend
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: harmony-frontend
+  template:
+    metadata:
+      labels:
+        app: harmony-frontend
+        version: v1
+    spec:
+      containers:
+        - name: harmony-frontend
+          image: ghcr.io/harmony-project/harmony-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: harmony-config
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: API_URL
+              value: "https://api.harmony.app"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: static-assets
+              mountPath: /app/static
+      volumes:
+        - name: static-assets
+          persistentVolumeClaim:
+            claimName: harmony-static-assets-pvc
+      imagePullSecrets:
+        - name: ghcr-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - harmony-frontend
+                topologyKey: kubernetes.io/hostname
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "frontend"
+          effect: "NoSchedule"
+      priorityClassName: high-priority
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harmony-backend-deployment
+  namespace: harmony
+  labels:
+    app: harmony-backend
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: harmony-backend
+  template:
+    metadata:
+      labels:
+        app: harmony-backend
+        version: v1
+    spec:
+      containers:
+        - name: harmony-backend
+          image: ghcr.io/harmony-project/harmony-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: harmony-config
+            - secretRef:
+                name: harmony-secrets
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "5000"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: harmony-secrets
+                  key: database-connection-string
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: harmony-secrets
+                  key: cache-connection-string
+            - name: MESSAGE_QUEUE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: harmony-secrets
+                  key: message-queue-connection-string
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: logs
+              mountPath: /app/logs
+            - name: uploads
+              mountPath: /app/uploads
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            failureThreshold: 30
+      volumes:
+        - name: logs
+          persistentVolumeClaim:
+            claimName: harmony-logs-pvc
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: harmony-uploads-pvc
+      imagePullSecrets:
+        - name: ghcr-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - harmony-backend
+                topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-type
+                    operator: In
+                    values:
+                      - high-memory
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "backend"
+          effect: "NoSchedule"
+      priorityClassName: high-priority
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harmony-worker-deployment
+  namespace: harmony
+  labels:
+    app: harmony-worker
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: harmony-worker
+  template:
+    metadata:
+      labels:
+        app: harmony-worker
+        version: v1
+    spec:
+      containers:
+        - name: harmony-worker
+          image: ghcr.io/harmony-project/harmony-worker:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: harmony-config
+            - secretRef:
+                name: harmony-secrets
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: WORKER_CONCURRENCY
+              value: "4"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pgrep -f "node worker/index.js"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pgrep -f "node worker/index.js"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: logs
+              mountPath: /app/logs
+      volumes:
+        - name: logs
+          persistentVolumeClaim:
+            claimName: harmony-logs-pvc
+      imagePullSecrets:
+        - name: ghcr-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - harmony-worker
+                topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-type
+                    operator: In
+                    values:
+                      - high-cpu
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "worker"
+          effect: "NoSchedule"
+      priorityClassName: medium-priority
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harmony-ai-service-deployment
+  namespace: harmony
+  labels:
+    app: harmony-ai-service
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: harmony-ai-service
+  template:
+    metadata:
+      labels:
+        app: harmony-ai-service
+        version: v1
+    spec:
+      containers:
+        - name: harmony-ai-service
+          image: ghcr.io/harmony-project/harmony-ai-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: harmony-config
+            - secretRef:
+                name: harmony-secrets
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: AI_SERVICE_PORT
+              value: "8000"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: harmony-secrets
+                  key: openai-api-key
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: harmony-secrets
+                  key: gemini-api-key
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: models
+              mountPath: /app/models
+            - name: logs
+              mountPath: /app/logs
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: harmony-ai-models-pvc
+        - name: logs
+          persistentVolumeClaim:
+            claimName: harmony-logs-pvc
+      imagePullSecrets:
+        - name: ghcr-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - harmony-ai-service
+                topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-type
+                    operator: In
+                    values:
+                      - gpu
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "ai"
+          effect: "NoSchedule"
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      priorityClassName: high-priority
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harmony-redis-deployment
+  namespace: harmony
+  labels:
+    app: harmony-redis
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: harmony-redis
+  template:
+    metadata:
+      labels:
+        app: harmony-redis
+        version: v1
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.0-alpine
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 6379
+              name: redis
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: harmony-secrets
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: harmony-secrets
+                  key: redis-password
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+      volumes:
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: harmony-redis-data-pvc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - harmony-redis
+                topologyKey: kubernetes.io/hostname
+      priorityClassName: system-cluster-critical
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harmony-mongodb-deployment
+  namespace: harmony
+  labels:
+    app: harmony-mongodb
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: harmony-mongodb
+  template:
+    metadata:
+      labels:
+        app: harmony-mongodb
+        version: v1
+    spec:
+      containers:
+        - name: mongodb
+          image: mongo:5.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 27017
+              name: mongodb
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: harmony-secrets
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: harmony-secrets
+                  key: mongodb-username
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: harmony-secrets
+                  key: mongodb-password
+            - name: MONGO_INITDB_DATABASE
+              value: "harmony"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.runCommand('ping').ok"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.runCommand('ping').ok"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: mongodb-data
+              mountPath: /data/db
+      volumes:
+        - name: mongodb-data
+          persistentVolumeClaim:
+            claimName: harmony-mongodb-data-pvc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - harmony-mongodb
+                topologyKey: kubernetes.io/hostname
+      priorityClassName: system-cluster-critical
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harmony-elasticsearch-deployment
+  namespace: harmony
+  labels:
+    app: harmony-elasticsearch
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: harmony-elasticsearch
+  template:
+    metadata:
+      labels:
+        app: harmony-elasticsearch
+        version: v1
+    spec:
+      containers:
+        - name: elasticsearch
+          image: docker.elastic.co/elasticsearch/elasticsearch:8.7.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 9200
+              name: http
+              protocol: TCP
+            - containerPort: 9300
+              name: transport
+              protocol: TCP
+          env:
+            - name: discovery.type
+              value: "single-node"
+            - name: xpack.security.enabled
+              value: "false"
+            - name: "ES_JAVA_OPTS"
+              value: "-Xms512m -Xmx512m"
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "1000m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /_cluster/health?pretty
+              port: 9200
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health?pretty
+              port: 9200
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: elasticsearch-data
+              mountPath: /usr/share/elasticsearch/data
+      volumes:
+        - name: elasticsearch-data
+          persistentVolumeClaim:
+            claimName: harmony-elasticsearch-data-pvc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - harmony-elasticsearch
+                topologyKey: kubernetes.io/hostname
+      priorityClassName: system-cluster-critical
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harmony-rabbitmq-deployment
+  namespace: harmony
+  labels:
+    app: harmony-rabbitmq
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: harmony-rabbitmq
+  template:
+    metadata:
+      labels:
+        app: harmony-rabbitmq
+        version: v1
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3-management
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5672
+              name: amqp
+              protocol: TCP
+            - containerPort: 15672
+              name: management
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: harmony-secrets
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: harmony-secrets
+                  key: rabbitmq-username
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: harmony-secrets
+                  key: rabbitmq-password
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            exec:
+              command:
+                - rabbitmq-diagnostics
+                - -q
+                - ping
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - rabbitmq-diagnostics
+                - -q
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: rabbitmq-data
+              mountPath: /var/lib/rabbitmq
+      volumes:
+        - name: rabbitmq-data
+          persistentVolumeClaim:
+            claimName: harmony-rabbitmq-data-pvc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - harmony-rabbitmq
+                topologyKey: kubernetes.io/hostname
+      priorityClassName: system-cluster-critical
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harmony-prometheus-deployment
+  namespace: harmony
+  labels:
+    app: harmony-prometheus
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: harmony-prometheus
+  template:
+    metadata:
+      labels:
+        app: harmony-prometheus
+        version: v1
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 9090
+              name: http
+              protocol: TCP
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.path=/prometheus"
+            - "--web.console.libraries=/etc/prometheus/console_libraries"
+            - "--web.console.templates=/etc/prometheus/consoles"
+            - "--storage.tsdb.retention.time=200h"
+            - "--web.enable-lifecycle"
+          volumeMounts:
+            - name: prometheus-config
+              mountPath: /etc/prometheus
+            - name: prometheus-data
+              mountPath: /prometheus
+      volumes:
+        - name: prometheus-config
+          configMap:
+            name: prometheus-config
+        - name: prometheus-data
+          persistentVolumeClaim:
+            claimName: harmony-prometheus-data-pvc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      priorityClassName: system-cluster-critical
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: harmony-grafana-deployment
+  namespace: harmony
+  labels:
+    app: harmony-grafana
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: harmony-grafana
+  template:
+    metadata:
+      labels:
+        app: harmony-grafana
+        version: v1
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: grafana-datasources
+            - secretRef:
+                name: harmony-secrets
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: harmony-secrets
+                  key: grafana-admin-password
+          volumeMounts:
+            - name: grafana-data
+              mountPath: /var/lib/grafana
+            - name: grafana-dashboards
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: grafana-datasources
+              mountPath: /etc/grafana/provisioning/datasources
+      volumes:
+        - name: grafana-data
+          persistentVolumeClaim:
+            claimName: harmony-grafana-data-pvc
+        - name: grafana-dashboards
+          configMap:
+            name: grafana-dashboards
+        - name: grafana-datasources
+          configMap:
+            name: grafana-datasources
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        fsGroup: 472
+      priorityClassName: system-cluster-critical

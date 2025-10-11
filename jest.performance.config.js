@@ -79,7 +79,8 @@ module.exports = {
     '^mongoose$': 'mongoose-mock',
     '^redis$': 'redis-mock',
     '^jsonwebtoken$': 'jsonwebtoken-mock',
-    '^bcryptjs$': 'bcryptjs-mock'
+    '^bcryptjs$': 'bcryptjs-mock',
+    'supertest': 'supertest-mock'
   },
   
   // Test setup and teardown
@@ -102,6 +103,10 @@ module.exports = {
       outputPath: 'test-results/performance/report.html',
       includeSuiteFailure: true,
       includeFailureMsg: true
+    }],
+    ['jest-performance-reporter', {
+      outputPath: 'test-results/performance/performance.json',
+      metrics: ['time', 'memory', 'cpu']
     }]
   ],
   
@@ -117,33 +122,50 @@ module.exports = {
     apiResponseTime: {
       average: 500,
       p95: 1000,
-      p99: 1500
+      p99: 1500,
+      critical: 2000 // Critical threshold for alerts
     },
     
     // Database query time thresholds (in ms)
     dbQueryTime: {
       average: 100,
       p95: 300,
-      p99: 500
+      p99: 500,
+      critical: 1000
     },
     
     // Page load time thresholds (in ms)
     pageLoadTime: {
       average: 2000,
       p95: 3000,
-      p99: 5000
+      p99: 5000,
+      critical: 7000
     },
     
     // Memory usage thresholds (in MB)
     memoryUsage: {
       max: 512,
-      average: 256
+      average: 256,
+      critical: 768
     },
     
     // CPU usage thresholds (in %)
     cpuUsage: {
       max: 80,
-      average: 50
+      average: 50,
+      critical: 90
+    },
+    
+    // Error rate thresholds (percentage)
+    errorRate: {
+      max: 1,
+      critical: 5
+    },
+    
+    // Throughput thresholds (requests per second)
+    throughput: {
+      min: 100,
+      critical: 50
     }
   },
   
@@ -151,7 +173,9 @@ module.exports = {
   benchmark: {
     iterations: 100,
     warmupIterations: 10,
-    delayBetweenIterations: 100
+    delayBetweenIterations: 100,
+    statisticalAnalysis: true,
+    confidenceLevel: 95
   },
   
   // Load testing configuration
@@ -159,6 +183,82 @@ module.exports = {
     concurrentUsers: 100,
     rampUpTime: 60, // seconds
     testDuration: 300, // seconds
-    thinkTime: 1000 // milliseconds
+    thinkTime: 1000, // milliseconds
+    scenarios: [
+      {
+        name: 'Login Flow',
+        users: 20,
+        requests: [
+          { method: 'POST', path: '/api/auth/login', weight: 1 },
+          { method: 'GET', path: '/api/users/profile', weight: 1 }
+        ]
+      },
+      {
+        name: 'Music Streaming',
+        users: 50,
+        requests: [
+          { method: 'GET', path: '/api/tracks/random', weight: 3 },
+          { method: 'GET', path: '/api/playlists', weight: 1 },
+          { method: 'POST', path: '/api/tracks/:id/play', weight: 2 }
+        ]
+      },
+      {
+        name: 'AI Artist Creation',
+        users: 30,
+        requests: [
+          { method: 'POST', path: '/api/artists', weight: 1 },
+          { method: 'PUT', path: '/api/artists/:id', weight: 1 },
+          { method: 'GET', path: '/api/artists/:id', weight: 1 }
+        ]
+      }
+    ]
+  },
+  
+  // Additional configuration for better performance testing
+  cache: false, // Disable caching for performance tests
+  
+  // Force test isolation
+  resetModules: true,
+  
+  // Clear mocks between tests
+  clearMocks: true,
+  
+  // Don't automatically mock modules
+  automock: false,
+  
+  // Add test name pattern for filtering tests
+  testNamePattern: null,
+  
+  // Add coverage path ignore patterns
+  coveragePathIgnorePatterns: [
+    '/node_modules/',
+    '/dist/',
+    '/build/',
+    '/coverage/'
+  ],
+  
+  // Add detectOpenHandles to help with debugging
+  detectOpenHandles: true,
+  
+  // Add forceExit to ensure Jest exits after all tests
+  forceExit: true,
+  
+  // Add watch plugins for better development experience
+  watchPlugins: [
+    'jest-watch-typeahead/filename',
+    'jest-watch-typeahead/testname',
+    'jest-watch-coverage'
+  ],
+  
+  // Add performance monitoring
+  performance: {
+    metrics: {
+      time: true,
+      memory: true,
+      cpu: true,
+      network: true
+    },
+    samplingRate: 100, // Sample every 100ms
+    reportPath: 'test-results/performance/metrics.json'
   }
 };

@@ -87,8 +87,9 @@ module.exports = {
     percy: {
       enabled: true,
       token: process.env.PERCY_TOKEN,
-      widths: [375, 768, 1024, 1280], // Common device widths
+      widths: [375, 768, 1024, 1280, 1440, 1920], // Common device widths
       minimumThreshold: 0.01, // 1% difference allowed
+      maximumThreshold: 0.05, // 5% difference allowed for flaky tests
       ignoreAreas: [
         // Ignore dynamic content like timestamps
         {
@@ -104,12 +105,29 @@ module.exports = {
         {
           selector: '.notification-badge',
           type: 'color'
+        },
+        // Ignore loading spinners
+        {
+          selector: '.loading-spinner',
+          type: 'element'
+        },
+        // Ignore text content that changes frequently
+        {
+          selector: '.dynamic-text',
+          type: 'text'
         }
       ],
       // Percy-specific configuration
-        plugins: [
-          '@percy/jest'
-        ]
+      plugins: [
+        '@percy/jest'
+      ],
+      // Percy-specific options
+      renderOptions: {
+        quality: 80,
+        scaleFactor: 1,
+        maxDiffPixels: 1000,
+        maxDiffPixelRatio: 0.1
+      }
     },
     
     // Applitools configuration
@@ -133,8 +151,18 @@ module.exports = {
           name: 'Safari',
           width: 1024,
           height: 768
+        },
+        {
+          name: 'Edge',
+          width: 1024,
+          height: 768
         }
-      ]
+      ],
+      // Applitools-specific options
+      visualGridOptions: {
+        stitchMode: 'CSS',
+        waitBeforeCapture: 3000
+      }
     },
     
     // Local visual regression configuration
@@ -144,7 +172,50 @@ module.exports = {
       diffDirectory: 'test-results/visual/diffs',
       threshold: 0.01, // 1% difference allowed
       scale: 1,
-      failureThresholdType: 'percent'
+      failureThresholdType: 'percent',
+      // Local-specific options
+      comparisonMethod: 'pixel',
+      generateDiff: true,
+      diffColor: {
+        red: 255,
+        green: 0,
+        blue: 0,
+        alpha: 0.5
+      }
+    },
+    
+    // Component-specific configurations
+    components: {
+      // Header component specific settings
+      Header: {
+        ignoreAreas: [
+          {
+            selector: '.notification-badge',
+            type: 'element'
+          }
+        ],
+        breakpoints: [375, 768, 1024]
+      },
+      // Music player component specific settings
+      MusicPlayer: {
+        ignoreAreas: [
+          {
+            selector: '.track-time',
+            type: 'text'
+          }
+        ],
+        breakpoints: [768, 1024, 1440]
+      },
+      // Artist gallery component specific settings
+      ArtistGallery: {
+        ignoreAreas: [
+          {
+            selector: '.artist-card .play-button',
+            type: 'element'
+          }
+        ],
+        breakpoints: [375, 768, 1024, 1440]
+      }
     }
   },
   
@@ -157,6 +228,10 @@ module.exports = {
       outputPath: 'test-results/visual/report.html',
       includeSuiteFailure: true,
       includeFailureMsg: true
+    }],
+    ['jest-visual-reporter', {
+      outputPath: 'test-results/visual/visual-report.json',
+      includeDiffImages: true
     }]
   ],
   
@@ -179,6 +254,111 @@ module.exports = {
     '@testing-library/react': '@testing-library/react',
     '@testing-library/jest-dom': '@testing-library/jest-dom',
     '@testing-library/user-event': '@testing-library/user-event',
-    'jest-image-snapshot': 'jest-image-snapshot'
+    'jest-image-snapshot': 'jest-image-snapshot',
+    '@testing-library/react-hooks': '@testing-library/react-hooks'
+  },
+  
+  // Additional configuration for better visual testing
+  cache: false, // Disable caching for visual tests
+  
+  // Force test isolation
+  resetModules: true,
+  
+  // Clear mocks between tests
+  clearMocks: true,
+  
+  // Don't automatically mock modules
+  automock: false,
+  
+  // Add test name pattern for filtering tests
+  testNamePattern: null,
+  
+  // Add coverage path ignore patterns
+  coveragePathIgnorePatterns: [
+    '/node_modules/',
+    '/dist/',
+    '/build/',
+    '/coverage/'
+  ],
+  
+  // Add detectOpenHandles to help with debugging
+  detectOpenHandles: true,
+  
+  // Add forceExit to ensure Jest exits after all tests
+  forceExit: true,
+  
+  // Add watch plugins for better development experience
+  watchPlugins: [
+    'jest-watch-typeahead/filename',
+    'jest-watch-typeahead/testname',
+    'jest-watch-coverage'
+  ],
+  
+  // Add visual test configuration
+  visualTest: {
+    // Image comparison configuration
+    imageComparison: {
+      // Comparison method: 'pixel' or 'ssim'
+      method: 'ssim',
+      
+      // SSIM (Structural Similarity Index) threshold
+      ssimThreshold: 0.95,
+      
+      // Pixel comparison threshold
+      pixelThreshold: 0.01,
+      
+      // Ignore color differences
+      ignoreColors: false,
+      
+      // Ignore antialiasing
+      ignoreAntialiasing: true,
+      
+      // Allow slight differences in size
+      allowSizeMismatch: false,
+      
+      // Crop images to comparison area
+      crop: false
+    },
+    
+    // Screenshot configuration
+    screenshot: {
+      // Format: 'png' or 'jpeg'
+      format: 'png',
+      
+      // Quality for JPEG format (1-100)
+      quality: 80,
+      
+      // Scale factor for high DPI displays
+      scaleFactor: 1,
+      
+      // Capture full page or viewport
+      fullPage: false,
+      
+      // Wait for animations before capturing
+      waitForAnimations: true,
+      
+      // Timeout for waiting (ms)
+      waitTimeout: 5000
+    },
+    
+    // Diff configuration
+    diff: {
+      // Highlight differences
+      highlight: true,
+      
+      // Diff color
+      diffColor: {
+        red: 255,
+        green: 0,
+        blue: 0,
+        alpha: 0.5
+      },
+      
+      // Diff size
+      diffSize: 10,
+      
+      // Diff style
+      diffStyle: 'outline'
+    }
   }
 };

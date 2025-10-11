@@ -1,0 +1,421 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: harmony-config
+  namespace: harmony
+data:
+  # Application Configuration
+  NODE_ENV: "production"
+  PORT: "5000"
+  FRONTEND_URL: "https://harmony.app"
+  API_URL: "https://api.harmony.app"
+  
+  # Database Configuration
+  MONGODB_URI: "mongodb://mongodb-service:27017/harmony?authSource=admin"
+  POSTGRES_URI: "postgresql://postgres-user:postgres-password@postgres-service:5432/harmony"
+  
+  # Cache Configuration
+  REDIS_URL: "redis://redis-service:6379"
+  REDIS_PASSWORD: "redis-password"
+  
+  # Authentication Configuration
+  JWT_SECRET: "your-jwt-secret-key"
+  JWT_EXPIRES_IN: "7d"
+  REFRESH_TOKEN_EXPIRES_IN: "30d"
+  CLERK_PUBLISHABLE_KEY: "your-clerk-publishable-key"
+  CLERK_SECRET_KEY: "your-clerk-secret-key"
+  
+  # Payment Configuration
+  STRIPE_PUBLISHABLE_KEY: "pk_test_your-stripe-publishable-key"
+  STRIPE_SECRET_KEY: "sk_test_your-stripe-secret-key"
+  STRIPE_WEBHOOK_SECRET: "whsec_your-stripe-webhook-secret"
+  
+  # AI Services Configuration
+  OPENAI_API_KEY: "your-openai-api-key"
+  GEMINI_API_KEY: "your-gemini-api-key"
+  ANTHROPIC_API_KEY: "your-anthropic-api-key"
+  
+  # Cloud Storage Configuration
+  CLOUDINARY_CLOUD_NAME: "your-cloudinary-cloud-name"
+  CLOUDINARY_API_KEY: "your-cloudinary-api-key"
+  CLOUDINARY_API_SECRET: "your-cloudinary-api-secret"
+  AWS_ACCESS_KEY_ID: "your-aws-access-key-id"
+  AWS_SECRET_ACCESS_KEY: "your-aws-secret-access-key"
+  AWS_REGION: "us-east-1"
+  AWS_S3_BUCKET: "your-s3-bucket-name"
+  
+  # Email Configuration
+  EMAIL_SERVICE: "sendgrid"
+  SENDGRID_API_KEY: "your-sendgrid-api-key"
+  FROM_EMAIL: "noreply@harmony.app"
+  
+  # Message Queue Configuration
+  RABBITMQ_URL: "amqp://rabbitmq-user:rabbitmq-password@rabbitmq-service:5672"
+  
+  # Search Configuration
+  ELASTICSEARCH_URL: "http://elasticsearch-service:9200"
+  
+  # File Upload Configuration
+  MAX_FILE_SIZE: "10485760"  # 10MB
+  ALLOWED_FILE_TYPES: "mp3,wav,flac,aac,m4a,mp4,jpg,jpeg,png,gif"
+  UPLOAD_PATH: "/app/uploads"
+  
+  # Analytics Configuration
+  GOOGLE_ANALYTICS_ID: "your-google-analytics-id"
+  MIXPANEL_TOKEN: "your-mixpanel-token"
+  
+  # Security Configuration
+  CORS_ORIGIN: "https://harmony.app,https://staging.harmony.app"
+  RATE_LIMIT_WINDOW_MS: "900000"  # 15 minutes
+  RATE_LIMIT_MAX_REQUESTS: "100"
+  
+  # Logging Configuration
+  LOG_LEVEL: "info"
+  LOG_FILE_PATH: "/app/logs/app.log"
+  
+  # Monitoring Configuration
+  SENTRY_DSN: "your-sentry-dsn"
+  NEW_RELIC_LICENSE_KEY: "your-new-relic-license-key"
+  
+  # Feature Flags
+  ENABLE_AI_FEATURES: "true"
+  ENABLE_SOCIAL_FEATURES: "true"
+  ENABLE_PREMIUM_FEATURES: "true"
+  ENABLE_ANALYTICS: "true"
+  ENABLE_RECOMMENDATIONS: "true"
+  
+  # Performance Configuration
+  CACHE_TTL: "3600"  # 1 hour
+  CDN_URL: "https://cdn.harmony.app"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: harmony
+data:
+  nginx.conf: |
+    user nginx;
+    worker_processes auto;
+    error_log /var/log/nginx/error.log notice;
+    pid /var/run/nginx.pid;
+
+    events {
+      worker_connections 1024;
+      use epoll;
+      multi_accept on;
+    }
+
+    http {
+      include /etc/nginx/mime.types;
+      default_type application/octet-stream;
+
+      log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+      access_log /var/log/nginx/access.log main;
+
+      sendfile on;
+      tcp_nopush on;
+      tcp_nodelay on;
+      keepalive_timeout 65;
+      types_hash_max_size 2048;
+      server_tokens off;
+
+      # Gzip compression
+      gzip on;
+      gzip_vary on;
+      gzip_min_length 1024;
+      gzip_proxied any;
+      gzip_comp_level 6;
+      gzip_types
+        text/plain
+        text/css
+        text/xml
+        text/javascript
+        application/json
+        application/javascript
+        application/xml+rss
+        application/atom+xml
+        image/svg+xml;
+
+      # Rate limiting
+      limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+      limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;
+
+      # Security headers
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header X-XSS-Protection "1; mode=block" always;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header Referrer-Policy "no-referrer-when-downgrade" always;
+      add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+
+      # SSL configuration
+      ssl_protocols TLSv1.2 TLSv1.3;
+      ssl_prefer_server_ciphers on;
+      ssl_ciphers 'EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH';
+      ssl_session_cache shared:SSL:10m;
+      ssl_session_timeout 10m;
+
+      # Upstream servers
+      upstream frontend {
+        server harmony-frontend-service:3000;
+      }
+
+      upstream backend {
+        server harmony-backend-service:5000;
+      }
+
+      # HTTP server (redirects to HTTPS)
+      server {
+        listen 80;
+        server_name harmony.app www.harmony.app;
+        return 301 https://$server_name$request_uri;
+      }
+
+      # HTTPS server
+      server {
+        listen 443 ssl http2;
+        server_name harmony.app www.harmony.app;
+
+        # SSL certificates
+        ssl_certificate /etc/nginx/ssl/cert.pem;
+        ssl_certificate_key /etc/nginx/ssl/key.pem;
+
+        # Security
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+        # Frontend
+        location / {
+          proxy_pass http://frontend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_cache_bypass $http_upgrade;
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "upgrade";
+        }
+
+        # Backend API
+        location /api/ {
+          limit_req zone=api burst=20 nodelay;
+          proxy_pass http://backend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_read_timeout 300s;
+          proxy_connect_timeout 75s;
+        }
+
+        # Login endpoints (stricter rate limiting)
+        location /api/auth/ {
+          limit_req zone=login burst=5 nodelay;
+          proxy_pass http://backend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Static assets
+        location /static/ {
+          proxy_pass http://frontend;
+          proxy_cache_valid 200 1d;
+          add_header Cache-Control "public, no-transform";
+        }
+
+        # Health check
+        location /health {
+          access_log off;
+          return 200 "healthy\n";
+          add_header Content-Type text/plain;
+        }
+
+        # Metrics
+        location /metrics {
+          access_log off;
+          proxy_pass http://prometheus-service:9090/metrics;
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: harmony
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    rule_files:
+      - "alert_rules.yml"
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+              - alertmanager-service:9093
+
+    scrape_configs:
+      - job_name: 'harmony-backend'
+        static_configs:
+          - targets: ['harmony-backend-service:5000']
+        metrics_path: '/metrics'
+        scrape_interval: 15s
+        scrape_timeout: 10s
+
+      - job_name: 'harmony-frontend'
+        static_configs:
+          - targets: ['harmony-frontend-service:3000']
+        metrics_path: '/metrics'
+        scrape_interval: 15s
+        scrape_timeout: 10s
+
+      - job_name: 'nginx'
+        static_configs:
+          - targets: ['nginx-service:80']
+        metrics_path: '/metrics'
+        scrape_interval: 15s
+        scrape_timeout: 10s
+
+      - job_name: 'mongodb'
+        static_configs:
+          - targets: ['mongodb-service:27017']
+        metrics_path: '/metrics'
+        scrape_interval: 15s
+        scrape_timeout: 10s
+
+      - job_name: 'redis'
+        static_configs:
+          - targets: ['redis-service:6379']
+        metrics_path: '/metrics'
+        scrape_interval: 15s
+        scrape_timeout: 10s
+
+      - job_name: 'rabbitmq'
+        static_configs:
+          - targets: ['rabbitmq-service:15692']
+        metrics_path: '/metrics'
+        scrape_interval: 15s
+        scrape_timeout: 10s
+
+      - job_name: 'elasticsearch'
+        static_configs:
+          - targets: ['elasticsearch-service:9200']
+        metrics_path: '/metrics'
+        scrape_interval: 15s
+        scrape_timeout: 10s
+
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+        metrics_path: '/metrics'
+        scrape_interval: 15s
+        scrape_timeout: 10s
+
+      - job_name: 'node-exporter'
+        static_configs:
+          - targets: ['node-exporter-service:9100']
+        metrics_path: '/metrics'
+        scrape_interval: 15s
+        scrape_timeout: 10s
+
+      - job_name: 'blackbox'
+        metrics_path: /probe
+        params:
+          module: [http_2xx]
+        static_configs:
+          - targets:
+            - https://harmony.app
+            - https://api.harmony.app
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: instance
+          - target_label: __address__
+            replacement: blackbox-exporter-service:9115
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: harmony
+data:
+  prometheus.yml: |
+    apiVersion: 1
+
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        orgId: 1
+        url: http://prometheus-service:9090
+        basicAuth: false
+        isDefault: true
+        version: 1
+        editable: false
+        jsonData:
+          timeInterval: 15s
+          queryTimeout: 60s
+          httpMethod: POST
+        secureJsonData: {}
+        version: 1
+
+      - name: Loki
+        type: loki
+        access: proxy
+        orgId: 1
+        url: http://loki-service:3100
+        basicAuth: false
+        isDefault: false
+        version: 1
+        editable: false
+        jsonData:
+          maxLines: 1000
+        secureJsonData: {}
+        version: 1
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: harmony
+data:
+  node-exporter-full.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Node Exporter Full",
+        "tags": ["node", "exporter"],
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "CPU Usage",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "100 - (avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+                "legendFormat": "{{ instance }}"
+              }
+            ],
+            "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 0
+            }
+          }
+        ]
+      }
+    }

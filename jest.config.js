@@ -7,7 +7,14 @@ module.exports = {
   },
   
   // Setup files
-  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  setupFilesAfterEnv: [
+    '<rootDir>/jest.setup.js',
+    '<rootDir>/tests/__mocks__/browserMocks.js'
+  ],
+  
+  // Additional setup files for different test types
+  globalSetup: '<rootDir>/tests/backend-setup.js',
+  globalTeardown: '<rootDir>/tests/backend-teardown.js',
   
   // Test match patterns
   testMatch: [
@@ -46,7 +53,8 @@ module.exports = {
     'lcov',
     'html',
     'cobertura',
-    'json-summary'
+    'json-summary',
+    'text-summary'
   ],
   
   // Coverage thresholds
@@ -69,6 +77,36 @@ module.exports = {
       functions: 75,
       lines: 75,
       statements: 75
+    },
+    './server/routes/': {
+      branches: 90,
+      functions: 90,
+      lines: 90,
+      statements: 90
+    },
+    './server/services/': {
+      branches: 90,
+      functions: 90,
+      lines: 90,
+      statements: 90
+    },
+    './src/components/': {
+      branches: 70,
+      functions: 70,
+      lines: 70,
+      statements: 70
+    },
+    './src/hooks/': {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80
+    },
+    './src/lib/': {
+      branches: 85,
+      functions: 85,
+      lines: 85,
+      statements: 85
     }
   },
   
@@ -112,7 +150,8 @@ module.exports = {
   // Watch plugins
   watchPlugins: [
     'jest-watch-typeahead/filename',
-    'jest-watch-typeahead/testname'
+    'jest-watch-typeahead/testname',
+    'jest-watch-coverage'
   ],
   
   // Babel configuration
@@ -130,6 +169,172 @@ module.exports = {
       '@babel/plugin-transform-runtime',
       '@babel/plugin-proposal-class-properties',
       '@babel/plugin-proposal-object-rest-spread'
+    ]
+  },
+  
+  // Additional configuration for better test performance
+  cache: true,
+  cacheDirectory: '<rootDir>/node_modules/.cache/jest',
+  
+  // Force test isolation to prevent test pollution
+  resetModules: true,
+  
+  // Clear mocks between tests
+  clearMocks: true,
+  
+  // Don't automatically mock modules
+  automock: false,
+  
+  // Collect performance data
+  testTimeout: 30000,
+  
+  // Enable parallel test execution
+  maxWorkers: '50%',
+  
+  // Add test name pattern for filtering tests
+  testNamePattern: null,
+  
+  // Add coverage path ignore patterns
+  coveragePathIgnorePatterns: [
+    '/node_modules/',
+    '/dist/',
+    '/build/',
+    '/coverage/'
+  ],
+  
+  // Add detectOpenHandles to help with debugging
+  detectOpenHandles: true,
+  
+  // Add forceExit to ensure Jest exits after all tests
+  forceExit: true,
+  
+  // Additional configuration for performance testing
+  testResultsProcessor: 'jest-junit',
+  
+  // Performance test configuration
+  performance: {
+    // Enable performance testing
+    enabled: true,
+    
+    // Performance thresholds (in milliseconds)
+    thresholds: {
+      // Frontend performance thresholds
+      frontend: {
+        firstContentfulPaint: 1000,
+        largestContentfulPaint: 2500,
+        firstInputDelay: 100,
+        cumulativeLayoutShift: 0.1,
+        timeToInteractive: 3000
+      },
+      
+      // Backend performance thresholds
+      backend: {
+        apiResponseTime: 500,
+        databaseQueryTime: 200,
+        cacheResponseTime: 50
+      },
+      
+      // Load testing thresholds
+      load: {
+        concurrentUsers: 100,
+        requestsPerSecond: 50,
+        errorRate: 0.01,
+        averageResponseTime: 800,
+        p95ResponseTime: 1500
+      }
+    },
+    
+    // Performance monitoring configuration
+    monitoring: {
+      // Enable real-time performance monitoring
+      realtime: true,
+      
+      // Performance metrics to collect
+      metrics: [
+        'responseTime',
+        'throughput',
+        'errorRate',
+        'cpuUsage',
+        'memoryUsage',
+        'networkLatency'
+      ],
+      
+      // Alert thresholds
+      alerts: {
+        highResponseTime: 2000,
+        highErrorRate: 0.05,
+        highCpuUsage: 80,
+        highMemoryUsage: 80
+      }
+    }
+  },
+  
+  // Visual regression testing configuration
+  visual: {
+    // Enable visual regression testing
+    enabled: true,
+    
+    // Visual testing tools
+    tools: [
+      'percy',
+      'applitools',
+      'local'
+    ],
+    
+    // Visual testing configuration
+    config: {
+      // Percy configuration
+      percy: {
+        token: process.env.PERCY_TOKEN,
+        widths: [375, 768, 1280],
+        minHeight: 600,
+        PercyCSS: ''
+      },
+      
+      // Applitools configuration
+      applitools: {
+        apiKey: process.env.APPLITOOLS_API_KEY,
+        appName: 'Harmony Music Platform',
+        batchName: 'Jest Visual Regression Tests',
+        browser: [
+          { name: 'chrome', width: 1280, height: 720 },
+          { name: 'firefox', width: 1280, height: 720 },
+          { name: 'safari', width: 1280, height: 720 },
+          { name: 'iphone x', width: 375, height: 812 },
+          { name: 'pixel 2', width: 411, height: 731 }
+        ]
+      },
+      
+      // Local visual testing configuration
+      local: {
+        // Directory to store screenshots
+        screenshotDirectory: './screenshots',
+        
+        // Directory to store diff images
+        diffDirectory: './diffs',
+        
+        // Threshold for image comparison (0-1)
+        threshold: 0.01,
+        
+        // Ignore areas for comparison
+        ignoreAreas: []
+      }
+    },
+    
+    // Visual test patterns
+    testPatterns: [
+      '**/components/**/*.tsx',
+      '**/pages/**/*.tsx'
+    ],
+    
+    // Visual test ignore patterns
+    ignorePatterns: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/build/**',
+      '**/coverage/**',
+      '**/.next/**',
+      '**/tests/**'
     ]
   }
 };
