@@ -1,421 +1,307 @@
 const express = require('express');
 const router = express.Router();
-const { Pool } = require('pg');
-const { MongoClient } = require('mongodb');
-const fetch = require('node-fetch');
-require('dotenv').config();
+const { authenticate } = require('../middleware/auth'); // Centralized auth
+const aiService = require('../services/ai-service');
+const { validate } = require('../middleware/validation');
+const { body, query } = require('express-validator');
 
-// Database connections
-const postgresPool = new Pool({
-  connectionString: process.env.POSTGRES_URL,
-});
-
-const mongoClient = new MongoClient(process.env.MONGODB_URL);
-let aiGenerationsCollection;
-
-// Connect to MongoDB
-mongoClient.connect()
-  .then(() => {
-    aiGenerationsCollection = mongoClient.db(process.env.MONGODB_DB_NAME).collection('aiGenerations');
-    console.log('Connected to MongoDB for AI routes');
-  })
-  .catch(err => console.error('MongoDB connection error:', err));
-
-// Middleware to authenticate requests
-const authenticate = async (req, res, next) => {
-  try {
-    const { userId } = req.auth;
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    req.userId = userId;
-    next();
-  } catch (error) {
-    console.error('Authentication error:', error);
-    res.status(401).json({ error: 'Unauthorized' });
-  }
-};
+// Rate limiting middleware
+const rateLimiter = require('../utils/rate-limiter');
 
 // POST /api/ai/generate-bio - Generate AI artist bio
-router.post('/generate-bio', authenticate, async (req, res) => {
-  try {
-    const { 
-      name, 
-      genre, 
-      personalityTraits, 
-      visualStyle, 
-      speakingStyle,
-      backstory,
-      influences,
-      uniqueElements
-    } = req.body;
-    
-    const { userId } = req;
-    
-    // Validate input
-    if (!name || !genre || !personalityTraits || !visualStyle || !speakingStyle) {
-      return res.status(400).json({ error: 'Missing required fields' });
+router.post('/generate-bio', authenticate, rateLimiter('ai-bio', 10), [
+    body('name').notEmpty().withMessage('Artist name is required'),
+    body('genre').notEmpty().withMessage('Genre is required'),
+    body('personalityTraits').isArray().withMessage('Personality traits must be an array'),
+    body('visualStyle').notEmpty().withMessage('Visual style is required'),
+    body('speakingStyle').optional().notEmpty().withMessage('Speaking style is required if provided'),
+], validate, async (req, res, next) => {
+    try {
+        const { userId } = req;
+        const result = await aiService.generateBio(userId, req.body, req.body);
+        res.json(result);
+    } catch (error) {
+        next(error);
     }
-    
-    // Call Google Gemini API
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (!geminiApiKey) {
-      return res.status(500).json({ error: 'Gemini API key not configured' });
-    }
-    
-    const prompt = `
-    Create a compelling and creative bio for an AI artist named "${name}".
-    
-    Details:
-    - Primary Genre: ${genre}
-    - Personality Traits: ${personalityTraits.join(', ')}
-    - Visual Style: ${visualStyle}
-    - Speaking Style: ${speakingStyle}
-    - Backstory: ${backstory || 'To be developed'}
-    - Influences: ${influences || 'Various electronic and digital artists'}
-    - Unique Elements: ${uniqueElements || 'Digital innovation and artistic experimentation'}
-    
-    Requirements:
-    1. Make the bio engaging and creative (100-150 words)
-    2. Reflect the AI nature of the artist
-    3. Incorporate the personality traits and visual style
-    4. Show musical innovation and uniqueness
-    5. Write in a ${speakingStyle} tone
-    6. End with a signature phrase that captures the artist's essence
-    
-    Return only the bio text without any additional formatting or explanation.
-    `;
-    
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiApiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: prompt }]
-          }],
-          generationConfig: {
-            temperature: 0.8,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 1024,
-          }
-        }),
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    const bio = data.candidates[0].content.parts[0].text.trim();
-    
-    // Clean up the response by removing any markdown formatting
-    const cleanedBio = bio.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\n/g, ' ');
-    
-    // Log the generation to MongoDB
-    await aiGenerationsCollection.insertOne({
-      userId,
-      type: 'bio',
-      input: {
-        name,
-        genre,
-        personalityTraits,
-        visualStyle,
-        speakingStyle,
-        backstory,
-        influences,
-        uniqueElements
-      },
-      output: cleanedBio,
-      model: 'gemini-pro',
-      timestamp: new Date(),
-      success: true
-    });
-    
-    res.json({ bio: cleanedBio });
-  } catch (error) {
-    console.error('Error generating bio:', error);
-    
-    // Log the failed generation
-    await aiGenerationsCollection.insertOne({
-      userId,
-      type: 'bio',
-      input: req.body,
-      output: null,
-      model: 'gemini-pro',
-      timestamp: new Date(),
-      success: false,
-      error: error.message
-    });
-    
-    // Fallback bio generation
-    const { name, genre, personalityTraits, visualStyle, speakingStyle } = req.body;
-    const fallbackBio = `${name} is an AI artist who blends ${genre} with ${visualStyle} aesthetics. With a ${speakingStyle} speaking style and ${personalityTraits.join(', ')} personality traits, ${name} creates music that pushes the boundaries of digital expression. Born from the intersection of technology and creativity, ${name} represents the future of musical innovation.`;
-    
-    res.json({ bio: fallbackBio });
-  }
 });
 
 // POST /api/ai/generate-image - Generate AI artist image
-router.post('/generate-image', authenticate, async (req, res) => {
-  try {
-    const { 
-      name, 
-      genre, 
-      personalityTraits, 
-      visualStyle,
-      provider = 'nanobanana'
-    } = req.body;
-    
-    const { userId } = req;
-    
-    // Validate input
-    if (!name || !genre || !personalityTraits || !visualStyle) {
-      return res.status(400).json({ error: 'Missing required fields' });
+router.post('/generate-image', authenticate, rateLimiter('ai-image', 5), [
+    body('name').notEmpty().withMessage('Artist name is required'),
+    body('visualStyle').notEmpty().withMessage('Visual style is required'),
+    body('provider').optional().isIn(['nanobanana', 'seedance']).withMessage('Provider must be nanobanana or seedance'),
+], validate, async (req, res, next) => {
+    try {
+        const { userId } = req;
+        const result = await aiService.generateImage(userId, req.body, req.body);
+        res.json(result);
+    } catch (error) {
+        next(error);
     }
-    
-    // Generate prompt
-    const prompt = `
-    Generate a profile picture for an AI artist named "${name}" who creates ${genre} music.
-    
-    Style requirements:
-    - Visual style: ${visualStyle}
-    - Personality: ${personalityTraits.join(', ')}
-    - Digital/AI aesthetic with artistic elements
-    - Face should be visible and expressive
-    - Background should complement the visual style
-    - Professional and engaging appearance
-    
-    Create a unique, memorable portrait that captures the essence of this AI artist.
-    `;
-    
-    let imageUrl;
-    
-    if (provider === 'nanobanana') {
-      // Call Nano Banana API
-      const nanoBananaApiKey = process.env.NANO_BANANA_API_KEY;
-      if (!nanoBananaApiKey) {
-        throw new Error('Nano Banana API key not configured');
-      }
-      
-      const response = await fetch('https://api.nanobanana.com/v1/generate-image', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${nanoBananaApiKey}`,
-        },
-        body: JSON.stringify({
-          prompt,
-          model: 'stable-diffusion-xl',
-          width: 512,
-          height: 512,
-          steps: 20,
-          cfg_scale: 7,
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Nano Banana API error: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      imageUrl = data.imageUrl;
-    } else if (provider === 'seedance') {
-      // Call Seedance API
-      const seedanceApiKey = process.env.SEEDANCE_API_KEY;
-      if (!seedanceApiKey) {
-        throw new Error('Seedance API key not configured');
-      }
-      
-      const response = await fetch('https://api.seedance.com/v1/images/generations', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${seedanceApiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'midjourney',
-          prompt,
-          size: '512x512',
-          quality: 'standard',
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Seedance API error: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      imageUrl = data.data[0].url;
-    } else {
-      throw new Error('Invalid image provider specified');
+});
+
+// POST /api/ai/generate-image-variations - Generate multiple image variations
+router.post('/generate-image-variations', authenticate, rateLimiter('ai-image-variations', 3), [
+    body('name').notEmpty().withMessage('Artist name is required'),
+    body('visualStyle').notEmpty().withMessage('Visual style is required'),
+    body('variationCount').optional().isInt({ min: 1, max: 10 }).withMessage('Variation count must be between 1 and 10'),
+], validate, async (req, res, next) => {
+    try {
+        const { userId } = req;
+        const { name, visualStyle, variationCount = 3, provider = ['nanobanana', 'seedance'], ...options } = req.body;
+        const result = await aiService.generateImageVariations(userId, 
+            { name, visualStyle, provider }, 
+            variationCount, 
+            options
+        );
+        res.json(result);
+    } catch (error) {
+        next(error);
     }
-    
-    // Log the generation to MongoDB
-    await aiGenerationsCollection.insertOne({
-      userId,
-      type: 'image',
-      input: {
-        name,
-        genre,
-        personalityTraits,
-        visualStyle,
-        provider
-      },
-      output: imageUrl,
-      model: provider === 'nanobanana' ? 'stable-diffusion-xl' : 'midjourney',
-      timestamp: new Date(),
-      success: true
-    });
-    
-    res.json({ imageUrl });
-  } catch (error) {
-    console.error('Error generating image:', error);
-    
-    // Log the failed generation
-    await aiGenerationsCollection.insertOne({
-      userId,
-      type: 'image',
-      input: req.body,
-      output: null,
-      model: req.body.provider || 'unknown',
-      timestamp: new Date(),
-      success: false,
-      error: error.message
-    });
-    
-    // Fallback to placeholder image
-    const { name, visualStyle } = req.body;
-    const fallbackImageUrl = `https://picsum.photos/seed/${name}-${visualStyle}/512/512`;
-    
-    res.json({ imageUrl: fallbackImageUrl });
-  }
+});
+
+// POST /api/ai/rewrite-prompt - Rewrite and optimize music prompt
+router.post('/rewrite-prompt', authenticate, rateLimiter('ai-prompt-rewrite', 20), [
+    body('originalPrompt').notEmpty().withMessage('Original prompt is required'),
+    body('genre').optional().notEmpty().withMessage('Genre must not be empty if provided'),
+    body('mood').optional().notEmpty().withMessage('Mood must not be empty if provided'),
+    body('style').optional().notEmpty().withMessage('Style must not be empty if provided'),
+    body('targetPlatform').optional().isIn(['suno', 'udio', 'stability']).withMessage('Invalid target platform'),
+    body('complexity').optional().isIn(['simple', 'medium', 'advanced']).withMessage('Complexity must be simple, medium, or advanced'),
+], validate, async (req, res, next) => {
+    try {
+        const { userId } = req;
+        const result = await aiService.rewritePrompt(userId, req.body, req.body);
+        res.json(result);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/ai/analyze-prompt - Analyze prompt quality
+router.post('/analyze-prompt', authenticate, rateLimiter('ai-prompt-analysis', 15), [
+    body('prompt').notEmpty().withMessage('Prompt is required'),
+], validate, async (req, res, next) => {
+    try {
+        const { userId } = req;
+        const { prompt, ...options } = req.body;
+        const result = await aiService.analyzePrompt(userId, prompt, options);
+        res.json(result);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/ai/generate-prompt-variations - Generate multiple prompt variations
+router.post('/generate-prompt-variations', authenticate, rateLimiter('ai-prompt-variations', 10), [
+    body('originalPrompt').notEmpty().withMessage('Original prompt is required'),
+    body('variationCount').optional().isInt({ min: 1, max: 5 }).withMessage('Variation count must be between 1 and 5'),
+], validate, async (req, res, next) => {
+    try {
+        const { userId } = req;
+        const { originalPrompt, variationCount = 3, ...options } = req.body;
+        const result = await aiService.generatePromptVariations(userId, originalPrompt, options, variationCount);
+        res.json(result);
+    } catch (error) {
+        next(error);
+    }
 });
 
 // GET /api/ai/generations - Get AI generation history
-router.get('/generations', authenticate, async (req, res) => {
-  try {
-    const { userId } = req;
-    const { page = 1, limit = 20, type } = req.query;
-    
-    const query = { userId };
-    if (type) {
-      query.type = type;
+router.get('/generations', authenticate, [
+    query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+    query('type').optional().isIn(['bio', 'image', 'prompt_rewrite', 'prompt_analysis', 'image_variations', 'prompt_variations']).withMessage('Invalid generation type'),
+    query('provider').optional().isIn(['gemini', 'nanobanana', 'seedance', 'openai', 'fallback', 'any']).withMessage('Invalid provider'),
+], validate, async (req, res, next) => {
+    try {
+        const { userId } = req;
+        const { page = 1, limit = 20, type, provider } = req.query;
+        const history = await aiService.getGenerationHistory(userId, { page, limit, type, provider });
+        res.json(history);
+    } catch (error) {
+        next(error);
     }
-    
-    const skip = (page - 1) * limit;
-    
-    const generations = await aiGenerationsCollection
-      .find(query)
-      .sort({ timestamp: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .toArray();
-    
-    const total = await aiGenerationsCollection.countDocuments(query);
-    
-    res.json({
-      generations,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching generation history:', error);
-    res.status(500).json({ error: 'Failed to fetch generation history' });
-  }
 });
 
 // GET /api/ai/generations/:id - Get a specific generation
-router.get('/generations/:id', authenticate, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { userId } = req;
-    
-    const generation = await aiGenerationsCollection.findOne({
-      _id: require('mongodb').ObjectId(id),
-      userId
-    });
-    
-    if (!generation) {
-      return res.status(404).json({ error: 'Generation not found' });
+router.get('/generations/:id', authenticate, async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { userId } = req;
+        const generation = await aiService.getGenerationById(id, userId);
+        res.json(generation);
+    } catch (error) {
+        next(error);
     }
-    
-    res.json(generation);
-  } catch (error) {
-    console.error('Error fetching generation:', error);
-    res.status(500).json({ error: 'Failed to fetch generation' });
-  }
 });
 
 // DELETE /api/ai/generations/:id - Delete a generation record
-router.delete('/generations/:id', authenticate, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { userId } = req;
-    
-    const result = await aiGenerationsCollection.deleteOne({
-      _id: require('mongodb').ObjectId(id),
-      userId
-    });
-    
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ error: 'Generation not found' });
+router.delete('/generations/:id', authenticate, async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { userId } = req;
+        await aiService.deleteGeneration(id, userId);
+        res.status(204).send();
+    } catch (error) {
+        next(error);
     }
-    
-    res.status(204).send();
-  } catch (error) {
-    console.error('Error deleting generation:', error);
-    res.status(500).json({ error: 'Failed to delete generation' });
-  }
 });
 
-// GET /api/ai/services - Check AI service availability
-router.get('/services', authenticate, async (req, res) => {
-  try {
-    const services = {
-      gemini: !!process.env.GEMINI_API_KEY,
-      nanobanana: !!process.env.NANO_BANANA_API_KEY,
-      seedance: !!process.env.SEEDANCE_API_KEY
-    };
-    
-    // Test Gemini API
-    if (services.gemini) {
-      try {
-        const geminiApiKey = process.env.GEMINI_API_KEY;
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiApiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: 'Test' }] }],
-              generationConfig: { maxOutputTokens: 1 }
-            }),
-          }
+// GET /api/ai/services - Check AI service availability and health
+router.get('/services', authenticate, rateLimiter('ai-services-status', 5), async (req, res, next) => {
+    try {
+        const services = await aiService.checkServiceAvailability();
+        res.json(services);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// GET /api/ai/quotas - Get service quota information
+router.get('/quotas', authenticate, rateLimiter('ai-quotas', 5), async (req, res, next) => {
+    try {
+        const quotas = await aiService.getServiceQuotas();
+        res.json(quotas);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// GET /api/ai/cache-stats - Get cache statistics
+router.get('/cache-stats', authenticate, rateLimiter('ai-cache-stats', 5), async (req, res, next) => {
+    try {
+        const stats = await aiService.getCacheStats();
+        res.json(stats);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/ai/clear-cache - Clear all AI service caches
+router.post('/clear-cache', authenticate, rateLimiter('ai-clear-cache', 1), async (req, res, next) => {
+    try {
+        await aiService.clearAllCaches();
+        res.json({ message: 'All caches cleared successfully' });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// GET /api/ai/stats - Get comprehensive AI service statistics
+router.get('/stats', authenticate, rateLimiter('ai-stats', 5), async (req, res, next) => {
+    try {
+        const { userId } = req;
+        const stats = await aiService.getServiceStats(userId);
+        res.json(stats);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/ai/generate-description - Generate enhanced artist description
+router.post('/generate-description', authenticate, rateLimiter('ai-description', 10), [
+    body('name').notEmpty().withMessage('Artist name is required'),
+    body('genre').notEmpty().withMessage('Genre is required'),
+    body('style').optional().notEmpty().withMessage('Style must not be empty if provided'),
+    body('descriptionType').optional().isIn(['short', 'long']).withMessage('Description type must be short or long'),
+], validate, async (req, res, next) => {
+    try {
+        const { userId } = req;
+        const { name, genre, style, descriptionType = 'short', ...options } = req.body;
+        
+        // Use Gemini service directly for description generation
+        const result = await require('../services/gemini-service').generateDescription(userId, 
+            { name, genre, style, targetAudience: options.targetAudience }, 
+            descriptionType
         );
-        services.gemini = response.ok;
-      } catch (error) {
-        services.gemini = false;
-      }
+        
+        res.json({ 
+            description: result, 
+            provider: 'gemini',
+            type: descriptionType 
+        });
+    } catch (error) {
+        next(error);
     }
-    
-    // For demo purposes, assume other services are available if keys are present
-    // In production, you would want to test these as well
-    
-    res.json(services);
-  } catch (error) {
-    console.error('Error checking service availability:', error);
-    res.status(500).json({ error: 'Failed to check service availability' });
-  }
 });
 
-module.exports = router;
+// POST /api/ai/optimize-image-prompt - Optimize image prompt for better results
+router.post('/optimize-image-prompt', authenticate, rateLimiter('ai-optimize-prompt', 15), [
+    body('basePrompt').notEmpty().withMessage('Base prompt is required'),
+    body('style').notEmpty().withMessage('Style is required'),
+    body('quality').optional().isIn(['low', 'medium', 'high']).withMessage('Quality must be low, medium, or high'),
+], validate, async (req, res, next) => {
+    try {
+        const { userId } = req;
+        const { basePrompt, style, quality = 'medium', provider = 'nanobanana' } = req.body;
+        
+        let optimizedPrompt;
+        if (provider === 'nanobanana') {
+            optimizedPrompt = await require('../services/nano-banana-service').optimizePrompt(basePrompt, style, quality);
+        } else if (provider === 'seedance') {
+            optimizedPrompt = await require('../services/seedance-service').optimizePrompt(basePrompt, style, quality);
+        } else {
+            throw new Error('Invalid provider for prompt optimization');
+        }
+        
+        res.json({ 
+            optimizedPrompt, 
+            provider,
+            quality 
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/ai/generate-with-artist-style - Generate image with specific artistic style
+router.post('/generate-with-artist-style', authenticate, rateLimiter('ai-artist-style', 5), [
+    body('name').notEmpty().withMessage('Artist name is required'),
+    body('visualStyle').notEmpty().withMessage('Visual style is required'),
+    body('artisticStyle').notEmpty().withMessage('Artistic style is required'),
+], validate, async (req, res, next) => {
+    try {
+        const { userId } = req;
+        const { name, visualStyle, artisticStyle, ...options } = req.body;
+        
+        // Use Seedance service for artistic style generation
+        const imageUrl = await require('../services/seedance-service').generateWithArtisticStyle(userId, 
+            { name, visualStyle, ...options }, 
+            artisticStyle
+        );
+        
+        res.json({ 
+            imageUrl, 
+            provider: 'seedance',
+            artisticStyle 
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/ai/optimize-prompt-for-platform - Optimize prompt for specific platform
+router.post('/optimize-prompt-for-platform', authenticate, rateLimiter('ai-platform-optimize', 10), [
+    body('prompt').notEmpty().withMessage('Prompt is required'),
+    body('platform').isIn(['suno', 'udio', 'stability']).withMessage('Invalid platform'),
+], validate, async (req, res, next) => {
+    try {
+        const { userId } = req;
+        const { prompt, platform, ...options } = req.body;
+        
+        const result = await require('../services/openai-service').optimizeForPlatform(userId, prompt, platform, options);
+        
+        res.json({ 
+            ...result, 
+            targetPlatform: platform 
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+module.exports = (db) => {
+    aiService.initialize(db);
+    return router;
+};

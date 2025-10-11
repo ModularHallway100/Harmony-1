@@ -151,6 +151,34 @@ class RealtimeService {
         socket.leave('global');
         console.log(`Socket ${socket.id} left global room`);
       });
+
+      // Social notifications
+      socket.on('newComment', (data) => {
+        const { contentId, comment } = data;
+        this.io.to(`content-${contentId}`).emit('newComment', comment);
+      });
+
+      socket.on('likeContent', (data) => {
+        const { contentId, userId } = data;
+        this.io.to(`content-${contentId}`).emit('userLiked', { contentId, userId });
+      });
+
+      socket.on('followUser', (data) => {
+        const { followedId, followerId } = data;
+        this.io.to(`user-${followedId}`).emit('newFollower', { followerId });
+      });
+
+      // Join content-specific room
+      socket.on('joinContentRoom', (contentId) => {
+        socket.join(`content-${contentId}`);
+        console.log(`Socket ${socket.id} joined content room ${contentId}`);
+      });
+
+      // Leave content-specific room
+      socket.on('leaveContentRoom', (contentId) => {
+        socket.leave(`content-${contentId}`);
+        console.log(`Socket ${socket.id} left content room ${contentId}`);
+      });
     });
   }
 

@@ -103,6 +103,9 @@ interface ForumPost {
   reactions: Reaction[];
   isLiked: boolean;
   isBookmarked: boolean;
+  poll?: Poll;
+  qa?: QASession;
+  event?: ForumEvent;
 }
 
 interface User {
@@ -168,6 +171,36 @@ interface ForumSearchFilters {
   minLikes: number;
   hasImages: boolean;
   hasAttachments: boolean;
+}
+
+interface Poll {
+  id: string;
+  question: string;
+  options: { id: string; text: string; votes: number }[];
+  totalVotes: number;
+  userVote?: string;
+  endsAt: string;
+}
+
+interface QASession {
+  id: string;
+  title: string;
+  host: User;
+  startTime: string;
+  endTime: string;
+  status: 'upcoming' | 'live' | 'ended';
+  questions: { id: string; text: string; author: User; votes: number; isAnswered: boolean }[];
+}
+
+interface ForumEvent {
+  id: string;
+  title: string;
+  description: string;
+  startTime: string;
+  endTime: string;
+  location: string;
+  rsvps: number;
+  isUserRsvpd: boolean;
 }
 
 const CommunityForums: React.FC = () => {
@@ -810,7 +843,7 @@ const CommunityForums: React.FC = () => {
           </p>
         </div>
         
-        <Button 
+        <Button
           onClick={() => setIsCreatePostOpen(true)}
           className="flex items-center space-x-2 bg-cyan-600 hover:bg-cyan-700"
         >
@@ -819,317 +852,339 @@ const CommunityForums: React.FC = () => {
         </Button>
       </div>
       
-      {/* Forum Stats */}
-      {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-cyan-400">{stats.totalPosts.toLocaleString()}</div>
-              <div className="text-sm text-gray-400">Total Posts</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-purple-400">{stats.totalUsers.toLocaleString()}</div>
-              <div className="text-sm text-gray-400">Members</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-lime-400">{stats.totalReplies.toLocaleString()}</div>
-              <div className="text-sm text-gray-400">Replies</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-pink-400">{stats.activeToday}</div>
-              <div className="text-sm text-gray-400">Active Today</div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-      
-      {/* Categories */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Hash className="h-5 w-5 text-cyan-400" />
-            Categories
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {categories.map(category => (
-              <div 
-                key={category.id}
-                className="p-4 rounded-lg bg-black/30 border border-gray-700 hover:border-cyan-500/50 transition-all cursor-pointer"
-                onClick={() => handleSearchChange('category', category.name)}
-              >
-                <div className="flex items-center space-x-2 mb-2">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${category.color} text-white`}>
-                    {category.icon}
-                  </div>
-                  <h3 className="font-bold text-sm">{category.name}</h3>
-                </div>
-                <p className="text-xs text-gray-400 mb-2">{category.description}</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">{category.postCount} posts</span>
-                  {category.isModerated && (
-                    <Badge variant="secondary" className="text-xs">
-                      <Shield className="h-3 w-3 mr-1" />
-                      Moderated
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-      
-      {/* Search and Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search posts, tags, or authors..."
-                  value={searchFilters.query}
-                  onChange={(e) => handleSearchChange('query', e.target.value)}
-                  className="pl-10 bg-black/30 border-gray-700"
-                />
-              </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="discussions">Discussions</TabsTrigger>
+          <TabsTrigger value="categories">Categories</TabsTrigger>
+          <TabsTrigger value="polls-events">Polls & Events</TabsTrigger>
+        </TabsList>
+        <TabsContent value="discussions">
+          {/* Forum Stats */}
+          {stats && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <div className="text-2xl font-bold text-cyan-400">{stats.totalPosts.toLocaleString()}</div>
+                  <div className="text-sm text-gray-400">Total Posts</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <div className="text-2xl font-bold text-purple-400">{stats.totalUsers.toLocaleString()}</div>
+                  <div className="text-sm text-gray-400">Members</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <div className="text-2xl font-bold text-lime-400">{stats.totalReplies.toLocaleString()}</div>
+                  <div className="text-sm text-gray-400">Replies</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <div className="text-2xl font-bold text-pink-400">{stats.activeToday}</div>
+                  <div className="text-sm text-gray-400">Active Today</div>
+                </CardContent>
+              </Card>
             </div>
-            
-            <div className="flex gap-2">
-              <Select value={searchFilters.sortBy} onValueChange={(value) => handleSearchChange('sortBy', value)}>
-                <SelectTrigger className="w-32 bg-black/30 border-gray-700">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="latest">Latest</SelectItem>
-                  <SelectItem value="popular">Popular</SelectItem>
-                  <SelectItem value="trending">Trending</SelectItem>
-                  <SelectItem value="mostReplies">Most Replies</SelectItem>
-                </SelectContent>
-              </Select>
-              
-              <Select value={searchFilters.dateRange} onValueChange={(value) => handleSearchChange('dateRange', value)}>
-                <SelectTrigger className="w-32 bg-black/30 border-gray-700">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Time</SelectItem>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="week">This Week</SelectItem>
-                  <SelectItem value="month">This Month</SelectItem>
-                  <SelectItem value="year">This Year</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          )}
           
-          {/* Additional Filters */}
-          <div className="flex flex-wrap gap-2 mt-4">
-            <Button
-              variant={searchFilters.hasImages ? "default" : "outline"}
-              size="sm"
-              onClick={() => handleSearchChange('hasImages', !searchFilters.hasImages)}
-              className="text-xs"
-            >
-              <Image className="h-3 w-3 mr-1" />
-              With Images
-            </Button>
-            <Button
-              variant={searchFilters.hasAttachments ? "default" : "outline"}
-              size="sm"
-              onClick={() => handleSearchChange('hasAttachments', !searchFilters.hasAttachments)}
-              className="text-xs"
-            >
-              <FileText className="h-3 w-3 mr-1" />
-              With Attachments
-            </Button>
-            <Button
-              variant={searchFilters.minLikes > 0 ? "default" : "outline"}
-              size="sm"
-              onClick={() => handleSearchChange('minLikes', searchFilters.minLikes > 0 ? 0 : 10)}
-              className="text-xs"
-            >
-              <ThumbsUp className="h-3 w-3 mr-1" />
-              {searchFilters.minLikes > 0 ? `+${searchFilters.minLikes} Likes` : 'Min Likes'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-      
-      {/* Posts List */}
-      <div className="space-y-4">
-        {filteredPosts.length === 0 ? (
-          <Card>
-            <CardContent className="p-8 text-center">
-              <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-500" />
-              <h3 className="text-lg font-bold mb-2">No posts found</h3>
-              <p className="text-gray-400 mb-4">Try adjusting your search or filters</p>
-              <Button onClick={() => setIsCreatePostOpen(true)}>
-                Create the first post
-              </Button>
+          {/* Search and Filters */}
+          <Card className="mb-8">
+            <CardContent className="p-4">
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      placeholder="Search posts, tags, or authors..."
+                      value={searchFilters.query}
+                      onChange={(e) => handleSearchChange('query', e.target.value)}
+                      className="pl-10 bg-black/30 border-gray-700"
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex gap-2">
+                  <Select value={searchFilters.sortBy} onValueChange={(value) => handleSearchChange('sortBy', value)}>
+                    <SelectTrigger className="w-32 bg-black/30 border-gray-700">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="latest">Latest</SelectItem>
+                      <SelectItem value="popular">Popular</SelectItem>
+                      <SelectItem value="trending">Trending</SelectItem>
+                      <SelectItem value="mostReplies">Most Replies</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  
+                  <Select value={searchFilters.dateRange} onValueChange={(value) => handleSearchChange('dateRange', value)}>
+                    <SelectTrigger className="w-32 bg-black/30 border-gray-700">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Time</SelectItem>
+                      <SelectItem value="today">Today</SelectItem>
+                      <SelectItem value="week">This Week</SelectItem>
+                      <SelectItem value="month">This Month</SelectItem>
+                      <SelectItem value="year">This Year</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              {/* Additional Filters */}
+              <div className="flex flex-wrap gap-2 mt-4">
+                <Button
+                  variant={searchFilters.hasImages ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handleSearchChange('hasImages', !searchFilters.hasImages)}
+                  className="text-xs"
+                >
+                  <Image className="h-3 w-3 mr-1" />
+                  With Images
+                </Button>
+                <Button
+                  variant={searchFilters.hasAttachments ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handleSearchChange('hasAttachments', !searchFilters.hasAttachments)}
+                  className="text-xs"
+                >
+                  <FileText className="h-3 w-3 mr-1" />
+                  With Attachments
+                </Button>
+                <Button
+                  variant={searchFilters.minLikes > 0 ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handleSearchChange('minLikes', searchFilters.minLikes > 0 ? 0 : 10)}
+                  className="text-xs"
+                >
+                  <ThumbsUp className="h-3 w-3 mr-1" />
+                  {searchFilters.minLikes > 0 ? `+${searchFilters.minLikes} Likes` : 'Min Likes'}
+                </Button>
+              </div>
             </CardContent>
           </Card>
-        ) : (
-          filteredPosts.map(post => (
-            <Card 
-              key={post.id} 
-              className="hover:border-cyan-500/30 transition-all cursor-pointer"
-              onClick={() => handleOpenPost(post)}
-            >
-              <CardContent className="p-4">
-                <div className="flex gap-4">
-                  {/* Author Info */}
-                  <div className="flex-shrink-0">
-                    <Avatar className="h-12 w-12">
-                      <AvatarImage src={post.author.avatarUrl} />
-                      <AvatarFallback>{post.author.fullName.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                  </div>
-                  
-                  {/* Post Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <div className="flex items-center space-x-2 mb-1">
-                          <h3 className="font-bold text-lg truncate">{post.title}</h3>
-                          {post.isPinned && (
-                            <Badge variant="secondary" className="text-xs">
-                              <Pin className="h-3 w-3 mr-1" />
-                              Pinned
-                            </Badge>
-                          )}
-                          {post.isLocked && (
-                            <Badge variant="secondary" className="text-xs">
-                              <Lock className="h-3 w-3 mr-1" />
-                              Locked
-                            </Badge>
-                          )}
-                          {post.isFeatured && (
-                            <Badge variant="secondary" className="text-xs bg-yellow-600/20 text-yellow-400">
-                              <Star className="h-3 w-3 mr-1" />
-                              Featured
-                            </Badge>
-                          )}
+          
+          {/* Posts List */}
+          <div className="space-y-4">
+            {filteredPosts.length === 0 ? (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-500" />
+                  <h3 className="text-lg font-bold mb-2">No posts found</h3>
+                  <p className="text-gray-400 mb-4">Try adjusting your search or filters</p>
+                  <Button onClick={() => setIsCreatePostOpen(true)}>
+                    Create the first post
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              filteredPosts.map(post => (
+                <Card
+                  key={post.id}
+                  className="hover:border-cyan-500/30 transition-all cursor-pointer"
+                  onClick={() => handleOpenPost(post)}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex gap-4">
+                      {/* Author Info */}
+                      <div className="flex-shrink-0">
+                        <Avatar className="h-12 w-12">
+                          <AvatarImage src={post.author.avatarUrl} />
+                          <AvatarFallback>{post.author.fullName.charAt(0)}</AvatarFallback>
+                        </Avatar>
+                      </div>
+                      
+                      {/* Post Content */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <div className="flex items-center space-x-2 mb-1">
+                              <h3 className="font-bold text-lg truncate">{post.title}</h3>
+                              {post.isPinned && (
+                                <Badge variant="secondary" className="text-xs">
+                                  <Pin className="h-3 w-3 mr-1" />
+                                  Pinned
+                                </Badge>
+                              )}
+                              {post.isLocked && (
+                                <Badge variant="secondary" className="text-xs">
+                                  <Lock className="h-3 w-3 mr-1" />
+                                  Locked
+                                </Badge>
+                              )}
+                              {post.isFeatured && (
+                                <Badge variant="secondary" className="text-xs bg-yellow-600/20 text-yellow-400">
+                                  <Star className="h-3 w-3 mr-1" />
+                                  Featured
+                                </Badge>
+                              )}
+                            </div>
+                            
+                            <div className="flex items-center space-x-3 text-sm text-gray-400">
+                              <span>{post.author.fullName}</span>
+                              <span>•</span>
+                              <span>{formatDate(post.createdAt)}</span>
+                              <span>•</span>
+                              <Badge variant="outline" className="text-xs">
+                                {post.category}
+                              </Badge>
+                            </div>
+                          </div>
+                          
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem>
+                                <Bookmark className="h-4 w-4 mr-2" />
+                                {post.isBookmarked ? 'Unbookmark' : 'Bookmark'}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem>
+                                <Share2 className="h-4 w-4 mr-2" />
+                                Share
+                              </DropdownMenuItem>
+                              {post.author.id === currentUser?.id && (
+                                <>
+                                  <DropdownMenuItem>
+                                    <Edit className="h-4 w-4 mr-2" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem>
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              <DropdownMenuItem>
+                                <Flag className="h-4 w-4 mr-2" />
+                                Report
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                         
-                        <div className="flex items-center space-x-3 text-sm text-gray-400">
-                          <span>{post.author.fullName}</span>
-                          <span>•</span>
-                          <span>{formatDate(post.createdAt)}</span>
-                          <span>•</span>
-                          <Badge variant="outline" className="text-xs">
-                            {post.category}
-                          </Badge>
+                        <p className="text-gray-300 mb-3 line-clamp-2">{post.excerpt}</p>
+                        
+                        {/* Tags */}
+                        {post.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mb-3">
+                            {post.tags.map((tag, index) => (
+                              <Badge
+                                key={index}
+                                variant="outline"
+                                className="text-xs cursor-pointer hover:border-cyan-500"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSearchChange('query', `#${tag}`);
+                                }}
+                              >
+                                #{tag}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Stats */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-4 text-sm text-gray-400">
+                            <div className="flex items-center space-x-1">
+                              <Eye className="h-4 w-4" />
+                              <span>{post.views.toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center space-x-1">
+                              <MessageCircle className="h-4 w-4" />
+                              <span>{post.replies}</span>
+                            </div>
+                            <div className="flex items-center space-x-1">
+                              <ThumbsUp className="h-4 w-4" />
+                              <span>{post.likes}</span>
+                            </div>
+                          </div>
+                          
+                          {/* Reactions */}
+                          <div className="flex items-center space-x-2">
+                            {post.reactions.slice(0, 3).map((reaction, index) => (
+                              <Button
+                                key={index}
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs px-2 py-1 h-6"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // Handle reaction
+                                }}
+                              >
+                                <span className="mr-1">{getReactionIcon(reaction.type)}</span>
+                                {reaction.count > 0 && <span>{reaction.count}</span>}
+                              </Button>
+                            ))}
+                          </div>
                         </div>
                       </div>
-                      
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
-                            <Bookmark className="h-4 w-4 mr-2" />
-                            {post.isBookmarked ? 'Unbookmark' : 'Bookmark'}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Share2 className="h-4 w-4 mr-2" />
-                            Share
-                          </DropdownMenuItem>
-                          {post.author.id === currentUser?.id && (
-                            <>
-                              <DropdownMenuItem>
-                                <Edit className="h-4 w-4 mr-2" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem>
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                          <DropdownMenuItem>
-                            <Flag className="h-4 w-4 mr-2" />
-                            Report
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
                     </div>
-                    
-                    <p className="text-gray-300 mb-3 line-clamp-2">{post.excerpt}</p>
-                    
-                    {/* Tags */}
-                    {post.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        {post.tags.map((tag, index) => (
-                          <Badge 
-                            key={index} 
-                            variant="outline" 
-                            className="text-xs cursor-pointer hover:border-cyan-500"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSearchChange('query', `#${tag}`);
-                            }}
-                          >
-                            #{tag}
-                          </Badge>
-                        ))}
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </TabsContent>
+        <TabsContent value="categories">
+          {/* Categories */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Hash className="h-5 w-5 text-cyan-400" />
+                Categories
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                {categories.map(category => (
+                  <div
+                    key={category.id}
+                    className="p-4 rounded-lg bg-black/30 border border-gray-700 hover:border-cyan-500/50 transition-all cursor-pointer"
+                    onClick={() => handleSearchChange('category', category.name)}
+                  >
+                    <div className="flex items-center space-x-2 mb-2">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${category.color} text-white`}>
+                        {category.icon}
                       </div>
-                    )}
-                    
-                    {/* Stats */}
+                      <h3 className="font-bold text-sm">{category.name}</h3>
+                    </div>
+                    <p className="text-xs text-gray-400 mb-2">{category.description}</p>
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4 text-sm text-gray-400">
-                        <div className="flex items-center space-x-1">
-                          <Eye className="h-4 w-4" />
-                          <span>{post.views.toLocaleString()}</span>
-                        </div>
-                        <div className="flex items-center space-x-1">
-                          <MessageCircle className="h-4 w-4" />
-                          <span>{post.replies}</span>
-                        </div>
-                        <div className="flex items-center space-x-1">
-                          <ThumbsUp className="h-4 w-4" />
-                          <span>{post.likes}</span>
-                        </div>
-                      </div>
-                      
-                      {/* Reactions */}
-                      <div className="flex items-center space-x-2">
-                        {post.reactions.slice(0, 3).map((reaction, index) => (
-                          <Button
-                            key={index}
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs px-2 py-1 h-6"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // Handle reaction
-                            }}
-                          >
-                            <span className="mr-1">{getReactionIcon(reaction.type)}</span>
-                            {reaction.count > 0 && <span>{reaction.count}</span>}
-                          </Button>
-                        ))}
-                      </div>
+                      <span className="text-xs text-gray-500">{category.postCount} posts</span>
+                      {category.isModerated && (
+                        <Badge variant="secondary" className="text-xs">
+                          <Shield className="h-3 w-3 mr-1" />
+                          Moderated
+                        </Badge>
+                      )}
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="polls-events">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div>
+              <h2 className="text-2xl font-bold mb-4">Active Polls</h2>
+              {/* Polls would be rendered here */}
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold mb-4">Upcoming Events</h2>
+              {/* Events would be rendered here */}
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
       
       {/* Create Post Dialog */}
       <Dialog open={isCreatePostOpen} onOpenChange={setIsCreatePostOpen}>

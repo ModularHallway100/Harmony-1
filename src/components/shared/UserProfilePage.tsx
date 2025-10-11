@@ -82,6 +82,17 @@ interface UserProfile {
   recentActivity: Activity[];
   userStats: UserStats;
   preferences: UserPreferences;
+  socialConnections: SocialConnection[];
+  contentHighlights: ContentHighlight[];
+  badges: Badge[];
+  collaborations: Collaboration[];
+  fanClub?: FanClub;
+  referralCode: string;
+  referredUsers: number;
+  contentCategories: string[];
+  listeningStreak: number;
+  longestStreak: number;
+  communityMemberships: CommunityMembership[];
 }
 
 interface Achievement {
@@ -141,6 +152,74 @@ interface UserPreferences {
     newFeatures: boolean;
     promotional: boolean;
   };
+}
+
+interface SocialConnection {
+  id: string;
+  userId: string;
+  username: string;
+  fullName: string;
+  avatarUrl: string;
+  connectionType: 'mutual' | 'following' | 'follower';
+  connectedAt: string;
+  mutualArtists: string[];
+  mutualPlaylists: string[];
+}
+
+interface ContentHighlight {
+  id: string;
+  type: 'track' | 'playlist' | 'artist' | 'comment';
+  title: string;
+  description: string;
+  thumbnailUrl: string;
+  likes: number;
+  shares: number;
+  createdAt: string;
+  isPinned: boolean;
+}
+
+interface Badge {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  earnedAt: string;
+  level?: number;
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+}
+
+interface Collaboration {
+  id: string;
+  title: string;
+  type: 'track' | 'playlist' | 'album';
+  status: 'active' | 'completed' | 'cancelled';
+  participants: {
+    userId: string;
+    username: string;
+    role: 'producer' | 'vocalist' | 'lyricist' | 'composer';
+  }[];
+  createdAt: string;
+  completedAt?: string;
+}
+
+interface FanClub {
+  id: string;
+  name: string;
+  description: string;
+  memberCount: number;
+  benefits: string[];
+  level: 'bronze' | 'silver' | 'gold' | 'platinum';
+  joinedAt: string;
+}
+
+interface CommunityMembership {
+  id: string;
+  communityId: string;
+  communityName: string;
+  role: 'member' | 'moderator' | 'admin';
+  joinedAt: string;
+  activityScore: number;
 }
 
 const UserProfilePage: React.FC = () => {
@@ -333,7 +412,128 @@ const UserProfilePage: React.FC = () => {
         newFeatures: true,
         promotional: false
       }
-    }
+    },
+    socialConnections: [
+      {
+        id: 'conn-1',
+        userId: 'user-2',
+        username: 'beat_master',
+        fullName: 'Sarah Chen',
+        avatarUrl: 'https://i.pravatar.cc/150?u=beat_master',
+        connectionType: 'mutual',
+        connectedAt: '2023-07-15T10:30:00Z',
+        mutualArtists: ['artist-1', 'artist-3'],
+        mutualPlaylists: ['playlist-1', 'playlist-5']
+      },
+      {
+        id: 'conn-2',
+        userId: 'user-3',
+        username: 'melody_maker',
+        fullName: 'James Wilson',
+        avatarUrl: 'https://i.pravatar.cc/150?u=melody_maker',
+        connectionType: 'following',
+        connectedAt: '2023-08-20T14:45:00Z',
+        mutualArtists: ['artist-2'],
+        mutualPlaylists: ['playlist-3']
+      }
+    ],
+    contentHighlights: [
+      {
+        id: 'highlight-1',
+        type: 'track',
+        title: 'Neon Dreams',
+        description: 'My most popular synthwave track',
+        thumbnailUrl: 'https://via.placeholder.com/150',
+        likes: 1245,
+        shares: 89,
+        createdAt: '2023-09-15T18:30:00Z',
+        isPinned: true
+      },
+      {
+        id: 'highlight-2',
+        type: 'playlist',
+        title: 'Chill Vibes Mix',
+        description: 'Perfect for relaxing evenings',
+        thumbnailUrl: 'https://via.placeholder.com/150',
+        likes: 856,
+        shares: 45,
+        createdAt: '2023-10-05T20:15:00Z',
+        isPinned: false
+      }
+    ],
+    badges: [
+      {
+        id: 'badge-1',
+        name: 'Early Adopter',
+        description: 'Joined in the first month',
+        icon: '🚀',
+        color: 'bg-purple-600',
+        earnedAt: '2023-06-15T10:30:00Z',
+        rarity: 'rare'
+      },
+      {
+        id: 'badge-2',
+        name: 'Social Butterfly',
+        description: 'Connected with 100+ users',
+        icon: '🦋',
+        color: 'bg-blue-600',
+        earnedAt: '2023-08-10T16:20:00Z',
+        rarity: 'epic'
+      }
+    ],
+    collaborations: [
+      {
+        id: 'collab-1',
+        title: 'Summer Vibes EP',
+        type: 'album',
+        status: 'active',
+        participants: [
+          {
+            userId: 'user-4',
+            username: 'sunset_dj',
+            role: 'producer'
+          },
+          {
+            userId: 'user-5',
+            username: 'vocal_star',
+            role: 'vocalist'
+          }
+        ],
+        createdAt: '2023-09-01T12:00:00Z'
+      }
+    ],
+    fanClub: {
+      id: 'fanclub-1',
+      name: 'Synthwave Enthusiasts',
+      description: 'Exclusive community for synthwave lovers',
+      memberCount: 1247,
+      benefits: ['Exclusive tracks', 'Behind-the-scenes content', 'Meet & greets'],
+      level: 'gold',
+      joinedAt: '2023-07-20T15:30:00Z'
+    },
+    referralCode: 'ALEX2023',
+    referredUsers: 23,
+    contentCategories: ['Synthwave', 'Chillwave', 'Ambient', 'Electronic'],
+    listeningStreak: 15,
+    longestStreak: 42,
+    communityMemberships: [
+      {
+        id: 'membership-1',
+        communityId: 'community-1',
+        communityName: 'AI Music Creators',
+        role: 'moderator',
+        joinedAt: '2023-08-15T10:00:00Z',
+        activityScore: 845
+      },
+      {
+        id: 'membership-2',
+        communityId: 'community-2',
+        communityName: 'Electronic Music Producers',
+        role: 'member',
+        joinedAt: '2023-07-10T14:30:00Z',
+        activityScore: 623
+      }
+    ]
   };
   
   // Load profile data
@@ -660,11 +860,13 @@ const UserProfilePage: React.FC = () => {
       
       {/* Profile Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="achievements">Achievements</TabsTrigger>
+          <TabsTrigger value="connections">Connections</TabsTrigger>
+          <TabsTrigger value="showcase">Showcase</TabsTrigger>
         </TabsList>
         
         {/* Overview Tab */}
@@ -881,6 +1083,54 @@ const UserProfilePage: React.FC = () => {
                   <h3 className="font-bold mb-1">{achievement.title}</h3>
                   <p className="text-sm text-gray-400 mb-2">{achievement.description}</p>
                   <p className="text-xs text-gray-500">Unlocked {formatDate(achievement.unlockedAt)}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+        
+        {/* Connections Tab */}
+        <TabsContent value="connections" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {profile.socialConnections.map(connection => (
+              <Card key={connection.id}>
+                <CardContent className="pt-6 flex items-center space-x-4">
+                  <Avatar className="h-12 w-12">
+                    <AvatarImage src={connection.avatarUrl} />
+                    <AvatarFallback>{connection.fullName.charAt(0)}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                    <p className="font-medium">{connection.fullName}</p>
+                    <p className="text-sm text-gray-400">@{connection.username}</p>
+                    <Badge variant="secondary" className="mt-1 text-xs">
+                      {connection.connectionType}
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        {/* Showcase Tab */}
+        <TabsContent value="showcase" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {profile.contentHighlights.map(highlight => (
+              <Card key={highlight.id}>
+                <CardHeader>
+                  <CardTitle className="flex justify-between items-start">
+                    <span>{highlight.title}</span>
+                    {highlight.isPinned && <Bookmark className="h-4 w-4 text-cyan-400" />}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <img src={highlight.thumbnailUrl} alt={highlight.title} className="rounded-md mb-4" />
+                  <p className="text-sm text-gray-400 mb-2">{highlight.description}</p>
+                  <div className="flex items-center space-x-4 text-xs text-gray-500">
+                    <span>{highlight.likes} Likes</span>
+                    <span>{highlight.shares} Shares</span>
+                    <span>{formatDate(highlight.createdAt)}</span>
+                  </div>
                 </CardContent>
               </Card>
             ))}

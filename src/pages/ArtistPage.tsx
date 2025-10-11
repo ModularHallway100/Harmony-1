@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getArtistById, getTracksByArtistId } from '@/lib/mock-data';
 import TrackList from '@/components/shared/TrackList';
+import FanSubscriptionSystem from '@/components/shared/FanSubscriptionSystem';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useLibraryStore } from '@/store/library-store';
 import { useClerkUser } from '@/contexts/ClerkUserContext';
-import { Check, Plus, Edit, Trash2, Image, Wand2, Sparkles, Play } from 'lucide-react';
+import { Check, Plus, Edit, Trash2, Image, Wand2, Sparkles, Play, Heart } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -373,10 +374,11 @@ export const ArtistPage: React.FC = () => {
       
       {/* Artist Details Tabs */}
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="personality">Personality</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
+          <TabsTrigger value="support">Support Artist</TabsTrigger>
         </TabsList>
         
         <TabsContent value="overview" className="space-y-6">
@@ -523,6 +525,10 @@ export const ArtistPage: React.FC = () => {
               </Card>
             </div>
           )}
+        </TabsContent>
+        
+        <TabsContent value="support" className="space-y-6">
+          <FanSubscriptionSystem artistId={id || ''} />
         </TabsContent>
       </Tabs>
       

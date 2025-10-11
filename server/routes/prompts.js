@@ -3,6 +3,8 @@ const router = express.Router();
 const { Pool } = require('pg');
 const { MongoClient } = require('mongodb');
 const fetch = require('node-fetch');
+const aiService = require('../services/ai-service');
+const openaiService = require('../services/openai-service');
 require('dotenv').config();
 
 // Database connections
@@ -47,7 +49,8 @@ router.post('/rewrite', authenticate, async (req, res) => {
       instrumentation,
       style,
       optimizationLevel = 'standard',
-      targetPlatforms = ['suno']
+      targetPlatforms = ['suno'],
+      provider = 'openai'
     } = req.body;
 
     const { userId } = req;
@@ -61,93 +64,16 @@ router.post('/rewrite', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Genre and mood are required' });
     }
 
-    // Call Google Gemini API for prompt optimization
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (!geminiApiKey) {
-      return res.status(500).json({ error: 'Gemini API key not configured' });
-    }
-
-    // Build optimization prompt based on level
-    let optimizationPrompt = '';
-    switch (optimizationLevel) {
-      case 'basic':
-        optimizationPrompt = `Rewrite this music prompt to be more detailed and creative for AI music generation.`;
-        break;
-      case 'standard':
-        optimizationPrompt = `Enhance this music prompt with specific details about instruments, structure, and emotional impact for high-quality AI music generation.`;
-        break;
-      case 'advanced':
-        optimizationPrompt = `Transform this music prompt into a comprehensive, professional-grade prompt with detailed instrumentation, arrangement suggestions, production techniques, and emotional depth for superior AI music generation.`;
-        break;
-      case 'expert':
-        optimizationPrompt = `Create an expert-level music prompt with technical specifications, production details, arrangement breakdown, emotional journey mapping, and platform-specific optimizations for multiple AI music generation services.`;
-        break;
-      default:
-        optimizationPrompt = `Enhance this music prompt with specific details about instruments, structure, and emotional impact for high-quality AI music generation.`;
-    }
-
-    // Build platform-specific optimizations
-    let platformOptimizations = '';
-    if (targetPlatforms.includes('suno')) {
-      platformOptimizations += ' Optimize for Suno AI with clear sections (verse, chorus, bridge), instrumental layers, and emotional progression.';
-    }
-    if (targetPlatforms.includes('udio')) {
-      platformOptimizations += ' Optimize for Udio with detailed descriptions of instruments, vocal styles, and production elements.';
-    }
-
-    const fullPrompt = `
-      ${optimizationPrompt}
-      
-      Original Idea: "${basePrompt}"
-      Genre: ${genre}
-      Mood: ${mood}
-      Tempo: ${tempo || 'unspecified'}
-      Instrumentation: ${instrumentation ? instrumentation.join(', ') : 'unspecified'}
-      Style: ${style || 'unspecified'}
-      
-      Requirements:
-      1. Make the prompt detailed, creative, and engaging
-      2. Include specific instruments and musical elements
-      3. Suggest song structure and arrangement
-      4. Add emotional depth and atmosphere
-      5. Include production quality descriptors
-      6. Make it suitable for ${targetPlatforms.join(', ')}${platformOptimizations}
-      7. Keep it concise but comprehensive (150-250 words)
-      8. End with a strong, evocative closing statement
-      
-      Return only the enhanced prompt without any additional formatting or explanation.
-    `;
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiApiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: fullPrompt }]
-          }],
-          generationConfig: {
-            temperature: 0.8,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 1024,
-          }
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    let refinedPrompt = data.candidates[0].content.parts[0].text.trim();
-
-    // Clean up the response
-    refinedPrompt = refinedPrompt.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\n/g, ' ');
+    // Use AI service to rewrite prompt
+    const result = await aiService.rewritePrompt(userId, {
+      originalPrompt: basePrompt,
+      genre,
+      mood,
+      style,
+      targetPlatform: targetPlatforms[0] || 'suno',
+      complexity: optimizationLevel,
+      provider
+    });
 
     // Log the generation to MongoDB
     await aiGenerationsCollection.insertOne({
@@ -161,10 +87,11 @@ router.post('/rewrite', authenticate, async (req, res) => {
         instrumentation,
         style,
         optimizationLevel,
-        targetPlatforms
+        targetPlatforms,
+        provider
       },
-      output: refinedPrompt,
-      model: 'gemini-pro',
+      output: result.refinedPrompt,
+      model: result.provider,
       timestamp: new Date(),
       success: true
     });
@@ -172,7 +99,7 @@ router.post('/rewrite', authenticate, async (req, res) => {
     // Return the refined prompt
     res.json({
       success: true,
-      refinedPrompt,
+      refinedPrompt: result.refinedPrompt,
       metadata: {
         genre,
         mood,
@@ -181,8 +108,10 @@ router.post('/rewrite', authenticate, async (req, res) => {
         style,
         optimizationLevel,
         targetPlatforms,
+        provider: result.provider,
         timestamp: new Date().toISOString()
-      }
+      },
+      analysis: result.analysis || null
     });
 
   } catch (error) {
@@ -194,7 +123,7 @@ router.post('/rewrite', authenticate, async (req, res) => {
       type: 'prompt_rewrite',
       input: req.body,
       output: null,
-      model: 'gemini-pro',
+      model: 'openai',
       timestamp: new Date(),
       success: false,
       error: error.message
@@ -219,6 +148,185 @@ router.post('/rewrite', authenticate, async (req, res) => {
         fallback: true
       }
     });
+  }
+});
+
+// POST /api/prompts/analyze - Analyze prompt quality and provide suggestions
+router.post('/analyze', authenticate, async (req, res) => {
+  try {
+    const { prompt, genre, mood, style } = req.body;
+    const { userId } = req;
+
+    // Validate input
+    if (!prompt || !prompt.trim()) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+
+    // Use AI service to analyze prompt
+    const result = await aiService.analyzePrompt(userId, prompt, {
+      genre,
+      mood,
+      style
+    });
+
+    // Log the analysis
+    await aiGenerationsCollection.insertOne({
+      userId,
+      type: 'prompt_analysis',
+      input: { prompt, genre, mood, style },
+      output: result,
+      model: 'openai',
+      timestamp: new Date(),
+      success: true
+    });
+
+    res.json({
+      success: true,
+      analysis: result,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error analyzing prompt:', error);
+
+    // Log the failed analysis
+    await aiGenerationsCollection.insertOne({
+      userId: req.userId,
+      type: 'prompt_analysis',
+      input: req.body,
+      output: null,
+      model: 'openai',
+      timestamp: new Date(),
+      success: false,
+      error: error.message
+    });
+
+    res.status(500).json({ error: 'Failed to analyze prompt' });
+  }
+});
+
+// POST /api/prompts/variations - Generate multiple prompt variations
+router.post('/variations', authenticate, async (req, res) => {
+  try {
+    const {
+      originalPrompt,
+      genre,
+      mood,
+      style,
+      variationCount = 3,
+      provider = 'openai'
+    } = req.body;
+    const { userId } = req;
+
+    // Validate input
+    if (!originalPrompt || !originalPrompt.trim()) {
+      return res.status(400).json({ error: 'Original prompt is required' });
+    }
+
+    // Use AI service to generate variations
+    const result = await aiService.generatePromptVariations(userId, originalPrompt, {
+      genre,
+      mood,
+      style,
+      provider
+    }, variationCount);
+
+    // Log the variations
+    await aiGenerationsCollection.insertOne({
+      userId,
+      type: 'prompt_variations',
+      input: { originalPrompt, genre, mood, style, variationCount, provider },
+      output: { variations: result.variations, count: result.variations.length },
+      model: provider,
+      timestamp: new Date(),
+      success: true
+    });
+
+    res.json({
+      success: true,
+      variations: result.variations,
+      count: result.variations.length,
+      metadata: {
+        genre,
+        mood,
+        style,
+        provider,
+        timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error generating prompt variations:', error);
+
+    // Log the failed generation
+    await aiGenerationsCollection.insertOne({
+      userId: req.userId,
+      type: 'prompt_variations',
+      input: req.body,
+      output: null,
+      model: provider,
+      timestamp: new Date(),
+      success: false,
+      error: error.message
+    });
+
+    res.status(500).json({ error: 'Failed to generate prompt variations' });
+  }
+});
+
+// POST /api/prompts/optimize-for-platform - Optimize prompt for specific platform
+router.post('/optimize-for-platform', authenticate, async (req, res) => {
+  try {
+    const { prompt, platform } = req.body;
+    const { userId } = req;
+
+    // Validate input
+    if (!prompt || !prompt.trim()) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+
+    if (!platform || !['suno', 'udio', 'stability'].includes(platform)) {
+      return res.status(400).json({ error: 'Platform must be suno, udio, or stability' });
+    }
+
+    // Use OpenAI service to optimize for platform
+    const result = await openaiService.optimizeForPlatform(userId, prompt, platform);
+
+    // Log the optimization
+    await aiGenerationsCollection.insertOne({
+      userId,
+      type: 'platform_optimization',
+      input: { prompt, platform },
+      output: result,
+      model: 'openai',
+      timestamp: new Date(),
+      success: true
+    });
+
+    res.json({
+      success: true,
+      optimizedPrompt: result.optimizedPrompt,
+      platform,
+      suggestions: result.suggestions || [],
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error optimizing prompt for platform:', error);
+
+    // Log the failed optimization
+    await aiGenerationsCollection.insertOne({
+      userId: req.userId,
+      type: 'platform_optimization',
+      input: req.body,
+      output: null,
+      model: 'openai',
+      timestamp: new Date(),
+      success: false,
+      error: error.message
+    });
+
+    res.status(500).json({ error: 'Failed to optimize prompt for platform' });
   }
 });
 

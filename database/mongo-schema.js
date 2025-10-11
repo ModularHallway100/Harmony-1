@@ -108,351 +108,62 @@ const userPreferencesSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// AI Artist Data Schema
-const aiArtistSchema = new mongoose.Schema({
-    artistId: {
+// AI Artist Analytics Schema (for flexible, non-relational data)
+const aiArtistAnalyticsSchema = new mongoose.Schema({
+    artistId: { // Corresponds to the UUID in PostgreSQL
         type: String,
         required: true,
         unique: true,
-        ref: 'artists'
-    },
-    persona: {
-        name: {
-            type: String,
-            required: true
-        },
-        personalityTraits: [{
-            type: String,
-            lowercase: true
-        }],
-        backstory: {
-            type: String,
-            maxlength: 2000
-        },
-        speakingStyle: {
-            type: String,
-            enum: ['formal', 'casual', 'energetic', 'mysterious', 'friendly'],
-            default: 'casual'
-        },
-        visualStyle: {
-            type: String,
-            enum: [
-                'futuristic', 'retro', 'minimalist', 'vibrant', 'dark',
-                'cyberpunk', 'neon', 'watercolor', 'abstract', 'geometric',
-                'surreal', 'pop-art', 'anime', 'realistic', 'cartoon', 'sketch'
-            ],
-            default: 'vibrant'
-        },
-        influences: [{
-            type: String,
-            maxlength: 100
-        }],
-        uniqueElements: [{
-            type: String,
-            maxlength: 100
-        }]
-    },
-    musicStyle: {
-        primaryGenres: [{
-            type: String,
-            lowercase: true
-        }],
-        subgenres: [{
-            type: String,
-            lowercase: true
-        }],
-        characteristics: [{
-            type: String,
-            lowercase: true
-        }],
-        mood: [{
-            type: String,
-            enum: ['happy', 'sad', 'energetic', 'calm', 'romantic', 'mysterious', 'epic', 'dramatic']
-        }],
-        tempo: [{
-            type: String,
-            enum: ['slow', 'medium', 'fast']
-        }]
-    },
-    generationParameters: {
-        modelVersion: {
-            type: String,
-            default: '1.0'
-        },
-        creativityLevel: {
-            type: Number,
-            min: 0,
-            max: 100,
-            default: 70
-        },
-        complexity: {
-            type: Number,
-            min: 0,
-            max: 100,
-            default: 50
-        },
-        consistency: {
-            type: Number,
-            min: 0,
-            max: 100,
-            default: 80
-        },
-        aiService: {
-            type: String,
-            enum: ['gemini', 'nano-banana', 'seedance'],
-            default: 'gemini'
-        }
+        index: true
     },
     performanceMetrics: {
-        engagementRate: {
-            type: Number,
-            min: 0,
-            max: 100,
-            default: 0
-        },
-        fanGrowth: {
-            type: Number,
-            default: 0
-        },
-        streams: {
-            type: Number,
-            default: 0
-        },
-        likes: {
-            type: Number,
-            default: 0
-        },
-        shares: {
-            type: Number,
-            default: 0
-        },
-        trackPopularity: {
-            type: Map,
-            of: Number
-        },
+        engagementRate: { type: Number, default: 0 },
+        fanGrowth: { type: Number, default: 0 },
+        streams: { type: Number, default: 0 },
+        likes: { type: Number, default: 0 },
+        shares: { type: Number, default: 0 },
+        trackPopularity: { type: Map, of: Number },
         userFeedback: [{
             userId: String,
-            rating: {
-                type: Number,
-                min: 1,
-                max: 5
-            },
+            rating: { type: Number, min: 1, max: 5 },
             comment: String,
-            timestamp: Date
+            timestamp: { type: Date, default: Date.now }
         }]
     },
     aiTrainingData: {
-        prompts: [{
-            type: String,
-            maxlength: 1000
-        }],
-        examples: [{
-            type: String,
-            maxlength: 1000
-        }],
-        fineTuningData: [{
-            type: String,
-            maxlength: 1000
-        }]
+        prompts: [String],
+        examples: [String],
+        fineTuningData: [String]
     },
-    imageGallery: [{
-        imageId: {
-            type: String,
-            required: true
-        },
-        imageUrl: {
-            type: String,
-            required: true
-        },
-        prompt: {
-            type: String,
-            maxlength: 500
-        },
-        model: {
-            type: String,
-            enum: ['nano-banana', 'seedance', 'dall-e', 'midjourney']
-        },
-        isPrimary: {
-            type: Boolean,
-            default: false
-        },
-        tags: [{
-            type: String,
-            lowercase: true
-        }],
-        generatedAt: {
-            type: Date,
-            default: Date.now
-        }
-    }],
-    generationHistory: [{
-        generationId: {
-            type: String,
-            required: true
-        },
-        generationType: {
-            type: String,
-            enum: ['artist', 'bio', 'image', 'track'],
-            required: true
-        },
-        prompt: {
-            type: String,
-            required: true
-        },
-        refinedPrompt: {
-            type: String
-        },
-        parameters: {
-            type: Map,
-            of: mongoose.Schema.Types.Mixed
-        },
-        result: {
-            type: Map,
-            of: mongoose.Schema.Types.Mixed
-        },
-        serviceUsed: {
-            type: String,
-            enum: ['gemini', 'nano-banana', 'seedance'],
-            required: true
-        },
-        status: {
-            type: String,
-            enum: ['pending', 'processing', 'completed', 'failed'],
-            default: 'pending'
-        },
-        errorMessage: {
-            type: String
-        },
-        createdAt: {
-            type: Date,
-            default: Date.now
-        },
-        completedAt: {
-            type: Date
-        }
-    }],
-    createdAt: {
-        type: Date,
-        default: Date.now
-    },
-    updatedAt: {
-        type: Date,
-        default: Date.now
-    }
-}, {
-    timestamps: true
-});
+    updatedAt: { type: Date, default: Date.now }
+}, { timestamps: true });
 
-// Create text indexes for search functionality
-aiArtistSchema.index({
-    'persona.name': 'text',
-    'persona.personalityTraits': 'text',
-    'musicStyle.primaryGenres': 'text',
-    'musicStyle.subgenres': 'text',
-    'persona.visualStyle': 'text'
-}, {
-    weights: {
-        'persona.name': 10,
-        'persona.personalityTraits': 5,
-        'musicStyle.primaryGenres': 8,
-        'musicStyle.subgenres': 6,
-        'persona.visualStyle': 3
-    }
-});
-
-// Create compound indexes for performance
-aiArtistSchema.index({ 'artistId': 1 });
-aiArtistSchema.index({ 'persona.visualStyle': 1 });
-aiArtistSchema.index({ 'persona.speakingStyle': 1 });
-aiArtistSchema.index({ 'performanceMetrics.engagementRate': -1 });
-aiArtistSchema.index({ 'performanceMetrics.streams': -1 });
-aiArtistSchema.index({ 'createdAt': -1 });
-
-// AI Generation History Schema (standalone for system-wide tracking)
-const aiGenerationHistorySchema = new mongoose.Schema({
-    userId: {
+// AI Generation Log Schema (for tracking generation events)
+const aiGenerationLogSchema = new mongoose.Schema({
+    generationId: { // Corresponds to the UUID in PostgreSQL
         type: String,
         required: true,
-        ref: 'users'
+        unique: true,
+        index: true
     },
-    artistId: {
-        type: String,
-        ref: 'artists'
-    },
-    generationType: {
-        type: String,
-        enum: ['artist', 'bio', 'image', 'track', 'playlist', 'prompt'],
-        required: true
-    },
-    prompt: {
-        type: String,
-        required: true,
-        maxlength: 2000
-    },
-    refinedPrompt: {
-        type: String,
-        maxlength: 2000
-    },
-    parameters: {
-        type: Map,
-        of: mongoose.Schema.Types.Mixed
-    },
-    result: {
-        type: Map,
-        of: mongoose.Schema.Types.Mixed
-    },
-    status: {
-        type: String,
-        enum: ['pending', 'processing', 'completed', 'failed'],
-        default: 'pending'
-    },
+    userId: { type: String, required: true, index: true },
+    promptId: { type: String, index: true },
+    artistId: { type: String, index: true },
+    parameters: { type: Map, of: mongoose.Schema.Types.Mixed },
+    result: { type: Map, of: mongoose.Schema.Types.Mixed },
     externalService: {
         type: String,
-        enum: ['suno', 'udio', 'nano-banana', 'seedance', 'gemini', 'dall-e', 'midjourney'],
-        required: true
+        enum: ['suno', 'udio', 'nano-banana', 'seedance', 'gemini', 'dall-e', 'midjourney']
     },
-    serviceId: {
-        type: String
-    },
-    errorMessage: {
-        type: String,
-        maxlength: 1000
-    },
+    serviceId: String,
     feedback: {
-        rating: {
-            type: Number,
-            min: 1,
-            max: 5
-        },
-        comment: {
-            type: String,
-            maxlength: 500
-        },
-        helpful: {
-            type: Boolean
-        }
+        rating: { type: Number, min: 1, max: 5 },
+        comment: { type: String, maxlength: 500 },
+        helpful: Boolean
     },
-    processingTime: {
-        type: Number, // in milliseconds
-        default: 0
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now
-    },
-    completedAt: {
-        type: Date
-    }
-}, {
-    timestamps: true
-});
-
-// Create indexes for AI Generation History
-aiGenerationHistorySchema.index({ 'userId': 1, 'createdAt': -1 });
-aiGenerationHistorySchema.index({ 'artistId': 1, 'createdAt': -1 });
-aiGenerationHistorySchema.index({ 'generationType': 1, 'status': 1 });
-aiGenerationHistorySchema.index({ 'externalService': 1, 'status': 1 });
-aiGenerationHistorySchema.index({ 'createdAt': -1 });
+    processingTime: { type: Number, default: 0 }, // in milliseconds
+    createdAt: { type: Date, default: Date.now }
+}, { timestamps: true });
 
 // User Activity Schema
 const userActivitySchema = new mongoose.Schema({
@@ -594,16 +305,16 @@ const trendingContentSchema = new mongoose.Schema({
 
 // Create models
 const UserPreferences = mongoose.model('UserPreferences', userPreferencesSchema);
-const AIArtist = mongoose.model('AIArtist', aiArtistSchema);
-const AIGenerationHistory = mongoose.model('AIGenerationHistory', aiGenerationHistorySchema);
+const AIArtistAnalytics = mongoose.model('AIArtistAnalytics', aiArtistAnalyticsSchema);
+const AIGenerationLog = mongoose.model('AIGenerationLog', aiGenerationLogSchema);
 const UserActivity = mongoose.model('UserActivity', userActivitySchema);
 const ContentRecommendations = mongoose.model('ContentRecommendations', contentRecommendationsSchema);
 const TrendingContent = mongoose.model('TrendingContent', trendingContentSchema);
 
 module.exports = {
     UserPreferences,
-    AIArtist,
-    AIGenerationHistory,
+    AIArtistAnalytics,
+    AIGenerationLog,
     UserActivity,
     ContentRecommendations,
     TrendingContent

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Bot, 
-  Sparkles, 
-  Clipboard, 
-  Check, 
-  Save, 
-  FolderOpen, 
-  Heart, 
+import {
+  Bot,
+  Sparkles,
+  Clipboard,
+  Check,
+  Save,
+  FolderOpen,
+  Heart,
   Share2,
   Download,
   Settings,
@@ -29,7 +29,14 @@ import {
   Target,
   BookOpen,
   Palette,
-  Volume2
+  Volume2,
+  Wifi,
+  WifiOff,
+  AlertCircle,
+  CheckCircle,
+  TrendingUp,
+  Lightbulb,
+  Target as TargetIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -45,6 +52,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePromptStore } from '@/store/prompt-store';
 import { useUserStore } from '@/store/user-store';
+import { checkAIServiceStatus } from '@/lib/ai-services';
 
 // Genre options
 const GENRES = [
@@ -138,12 +146,34 @@ const PromptRewriterPage: React.FC = () => {
   const [customTag, setCustomTag] = useState('');
   const [selectedInstrumentation, setSelectedInstrumentation] = useState<string[]>([]);
   const [showInstrumentationDialog, setShowInstrumentationDialog] = useState(false);
+  const [aiServiceStatus, setAiServiceStatus] = useState<{
+    openai: boolean;
+  }>({
+    openai: false
+  });
 
   // Initialize data
   useEffect(() => {
     fetchPrompts();
     fetchCollections();
     fetchTemplates();
+    
+    // Check AI service status
+    const checkServices = async () => {
+      try {
+        const status = await checkAIServiceStatus();
+        setAiServiceStatus({
+          openai: status.openai?.healthy || false
+        });
+      } catch (error) {
+        console.error('Failed to check AI service status:', error);
+      }
+    };
+
+    checkServices();
+    // Check status every 30 seconds
+    const interval = setInterval(checkServices, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   // Handle form changes
@@ -320,6 +350,28 @@ const PromptRewriterPage: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left Panel - Input Form */}
           <div className="lg:col-span-1 space-y-6">
+            {/* AI Service Status */}
+            <Card className="bg-gray-800/50 border-cyan-500/20 backdrop-blur-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg font-mono text-cyan-400 flex items-center gap-2">
+                  <Wifi className="h-4 w-4" />
+                  AI Service Status
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="flex items-center justify-between p-2 bg-gray-900/50 rounded">
+                    <span className="text-sm">OpenAI</span>
+                    {aiServiceStatus.openai ? (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <WifiOff className="h-4 w-4 text-red-500" />
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card className="bg-gray-800/50 border-cyan-500/30 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-cyan-400">
@@ -520,8 +572,8 @@ const PromptRewriterPage: React.FC = () => {
                 <div className="space-y-3 pt-4">
                   <Button
                     onClick={handleRewrite}
-                    disabled={isRewriting || !formState.basePrompt.trim()}
-                    className="w-full bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-700 hover:to-purple-700 text-white font-bold py-6 transition-all duration-300 hover:shadow-lg hover:shadow-cyan-500/25"
+                    disabled={isRewriting || !formState.basePrompt.trim() || !aiServiceStatus.openai}
+                    className="w-full bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-700 hover:to-purple-700 text-white font-bold py-6 transition-all duration-300 hover:shadow-lg hover:shadow-cyan-500/25 disabled:opacity-50"
                   >
                     {isRewriting ? (
                       <>
@@ -535,6 +587,13 @@ const PromptRewriterPage: React.FC = () => {
                       </>
                     )}
                   </Button>
+                  
+                  {!aiServiceStatus.openai && (
+                    <div className="bg-red-900/20 border border-red-500/50 rounded-md p-3 text-sm text-red-400">
+                      <AlertCircle className="h-4 w-4 mr-2 inline" />
+                      OpenAI service is currently unavailable. Please try again later.
+                    </div>
+                  )}
                   
                   <div className="flex gap-2">
                     <Button
@@ -628,6 +687,59 @@ const PromptRewriterPage: React.FC = () => {
 
               {/* Rewrite Tab */}
               <TabsContent value="rewrite" className="space-y-6">
+                {/* Prompt Analysis */}
+                {formState.basePrompt && (
+                  <Card className="bg-gray-800/50 border-amber-500/30 backdrop-blur-sm">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-amber-400">
+                        <Lightbulb className="w-5 h-5" />
+                        Prompt Analysis
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-gray-900/50 p-3 rounded-md">
+                          <div className="text-xs text-gray-400 mb-1">Genre Match</div>
+                          <div className="font-medium text-amber-400">
+                            {formState.genre || 'Not specified'}
+                          </div>
+                        </div>
+                        <div className="bg-gray-900/50 p-3 rounded-md">
+                          <div className="text-xs text-gray-400 mb-1">Mood Detected</div>
+                          <div className="font-medium text-purple-400">
+                            {formState.mood || 'Not specified'}
+                          </div>
+                        </div>
+                        <div className="bg-gray-900/50 p-3 rounded-md">
+                          <div className="text-xs text-gray-400 mb-1">Complexity Score</div>
+                          <div className="font-medium text-cyan-400">
+                            {formState.basePrompt.length > 100 ? 'High' : formState.basePrompt.length > 50 ? 'Medium' : 'Low'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 text-sm text-gray-400">
+                        <p className="mb-2">
+                          <strong>AI Suggestions:</strong>
+                        </p>
+                        <ul className="list-disc list-inside space-y-1 text-xs">
+                          {formState.genre && (
+                            <li>Consider adding specific instruments common in {formState.genre.toLowerCase()} music</li>
+                          )}
+                          {formState.mood && (
+                            <li>Enhance the mood with descriptive adjectives and atmospheric elements</li>
+                          )}
+                          {!formState.tempo && (
+                            <li>Include a tempo recommendation to guide the AI generation</li>
+                          )}
+                          {formState.basePrompt.length < 50 && (
+                            <li>Add more descriptive details about the desired sound and style</li>
+                          )}
+                        </ul>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 <Card className="bg-gray-800/50 border-lime-500/30 backdrop-blur-sm">
                   <CardHeader>
                     <div className="flex items-center justify-between">

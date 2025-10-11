@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useNavigate } from 'react-router-dom';
 import { useLibraryStore } from '@/store/library-store';
-import { generateAIBio, generateAIImage, trackAIServiceUsage } from '@/lib/ai-services';
+import { generateAIBio, generateAIImage, trackAIServiceUsage, checkAIServiceStatus } from '@/lib/ai-services';
 import ImageUpload from '@/components/shared/ImageUpload';
 import ArtistGallery from '@/components/shared/ArtistGallery';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Bot, Wand2, Image, Sparkles, Loader2, Upload, Trash2 } from 'lucide-react';
+import { Bot, Wand2, Image, Sparkles, Loader2, Upload, Trash2, Wifi, WifiOff, AlertCircle, CheckCircle } from 'lucide-react';
 
 // Enhanced artist form schema with personality traits and visual style
 const artistFormSchema = z.object({
@@ -55,6 +55,18 @@ export const CreateArtistPage: React.FC = () => {
   const [selectedTraits, setSelectedTraits] = useState<string[]>([]);
   const [uploadedImages, setUploadedImages] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState('basic');
+  const [aiServiceStatus, setAiServiceStatus] = useState<{
+    gemini: boolean;
+    nanobanana: boolean;
+    seedance: boolean;
+    openai: boolean;
+  }>({
+    gemini: false,
+    nanobanana: false,
+    seedance: false,
+    openai: false
+  });
+  const [generationHistory, setGenerationHistory] = useState<any[]>([]);
   
   const form = useForm<ArtistFormValues>({
     resolver: zodResolver(artistFormSchema),
@@ -70,6 +82,28 @@ export const CreateArtistPage: React.FC = () => {
       uniqueElements: '',
     },
   });
+
+  // Check AI service status on component mount
+  useEffect(() => {
+    const checkServices = async () => {
+      try {
+        const status = await checkAIServiceStatus();
+        setAiServiceStatus({
+          gemini: status.gemini?.healthy || false,
+          nanobanana: status.nanobanana?.healthy || false,
+          seedance: status.seedance?.healthy || false,
+          openai: status.openai?.healthy || false
+        });
+      } catch (error) {
+        console.error('Failed to check AI service status:', error);
+      }
+    };
+
+    checkServices();
+    // Check status every 30 seconds
+    const interval = setInterval(checkServices, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Handle personality trait selection
   const handleTraitToggle = (trait: string) => {
@@ -122,6 +156,11 @@ export const CreateArtistPage: React.FC = () => {
 
   // Generate AI bio
   const generateAIBio = async () => {
+    if (!aiServiceStatus.gemini) {
+      alert('Gemini service is currently unavailable. Please try again later.');
+      return;
+    }
+
     setIsGenerating(true);
     try {
       const { name, genre, personalityTraits, visualStyle, speakingStyle, backstory, influences, uniqueElements } = form.getValues();
@@ -135,9 +174,24 @@ export const CreateArtistPage: React.FC = () => {
         backstory,
         influences,
         uniqueElements,
+        template: genre.toLowerCase(),
+        complexity: 'standard',
+        targetAudience: 'general'
       });
       
       form.setValue('bio', generatedBio);
+      
+      // Add to generation history
+      const newGeneration = {
+        id: `gen-${Date.now()}`,
+        type: 'bio',
+        provider: 'gemini',
+        timestamp: new Date(),
+        success: true,
+        input: { name, genre, visualStyle },
+        output: generatedBio
+      };
+      setGenerationHistory(prev => [newGeneration, ...prev]);
       
       // Track successful API usage
       trackAIServiceUsage('gemini', 'bio_generation', true, {
@@ -148,6 +202,18 @@ export const CreateArtistPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to generate bio:', error);
       
+      // Add to generation history
+      const newGeneration = {
+        id: `gen-${Date.now()}`,
+        type: 'bio',
+        provider: 'gemini',
+        timestamp: new Date(),
+        success: false,
+        input: form.getValues(),
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+      setGenerationHistory(prev => [newGeneration, ...prev]);
+      
       // Track failed API usage
       trackAIServiceUsage('gemini', 'bio_generation', false);
     } finally {
@@ -156,7 +222,12 @@ export const CreateArtistPage: React.FC = () => {
   };
 
   // Generate AI image
-  const generateAIImage = async () => {
+  const generateAIImage = async (provider: 'nanobanana' | 'seedance' = 'nanobanana') => {
+    if (!aiServiceStatus[provider]) {
+      alert(`${provider.charAt(0).toUpperCase() + provider.slice(1)} service is currently unavailable. Please try again later.`);
+      return;
+    }
+
     setIsGenerating(true);
     try {
       const { name, genre, personalityTraits, visualStyle } = form.getValues();
@@ -166,13 +237,14 @@ export const CreateArtistPage: React.FC = () => {
         genre,
         personalityTraits,
         visualStyle,
-      }, 'nanobanana');
+        provider
+      });
       
       const newImage = {
         id: `img-${Date.now()}`,
         url: imageUrl,
-        prompt: `AI generated image for ${name}`,
-        model: 'nanobanana',
+        prompt: `AI generated image for ${name} using ${provider}`,
+        model: provider,
         generatedAt: new Date(),
         isPrimary: !generatedImage && uploadedImages.length === 0
       };
@@ -180,8 +252,20 @@ export const CreateArtistPage: React.FC = () => {
       setUploadedImages(prev => [...prev, newImage]);
       setGeneratedImage(imageUrl);
       
+      // Add to generation history
+      const newGeneration = {
+        id: `gen-${Date.now()}`,
+        type: 'image',
+        provider,
+        timestamp: new Date(),
+        success: true,
+        input: { name, genre, visualStyle },
+        output: imageUrl
+      };
+      setGenerationHistory(prev => [newGeneration, ...prev]);
+      
       // Track successful API usage
-      trackAIServiceUsage('nanobanana', 'image_generation', true, {
+      trackAIServiceUsage(provider, 'image_generation', true, {
         name,
         genre,
         visualStyle,
@@ -189,8 +273,68 @@ export const CreateArtistPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to generate image:', error);
       
+      // Add to generation history
+      const newGeneration = {
+        id: `gen-${Date.now()}`,
+        type: 'image',
+        provider,
+        timestamp: new Date(),
+        success: false,
+        input: form.getValues(),
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+      setGenerationHistory(prev => [newGeneration, ...prev]);
+      
       // Track failed API usage
-      trackAIServiceUsage('nanobanana', 'image_generation', false);
+      trackAIServiceUsage(provider, 'image_generation', false);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Generate multiple image variations
+  const generateImageVariations = async () => {
+    if (!aiServiceStatus.nanobanana || !aiServiceStatus.seedance) {
+      alert('One or more image generation services are currently unavailable. Please try again later.');
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const { name, genre, personalityTraits, visualStyle } = form.getValues();
+      
+      // Generate with both providers
+      const [nanobananaResult, seedanceResult] = await Promise.allSettled([
+        generateAIImage('nanobanana'),
+        generateAIImage('seedance')
+      ]);
+
+      // Add to generation history
+      const newGeneration = {
+        id: `gen-${Date.now()}`,
+        type: 'image_variations',
+        timestamp: new Date(),
+        success: nanobananaResult.status === 'fulfilled' && seedanceResult.status === 'fulfilled',
+        input: { name, genre, visualStyle },
+        results: [
+          { provider: 'nanobanana', success: nanobananaResult.status === 'fulfilled' },
+          { provider: 'seedance', success: seedanceResult.status === 'fulfilled' }
+        ]
+      };
+      setGenerationHistory(prev => [newGeneration, ...prev]);
+    } catch (error) {
+      console.error('Failed to generate image variations:', error);
+      
+      // Add to generation history
+      const newGeneration = {
+        id: `gen-${Date.now()}`,
+        type: 'image_variations',
+        timestamp: new Date(),
+        success: false,
+        input: form.getValues(),
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+      setGenerationHistory(prev => [newGeneration, ...prev]);
     } finally {
       setIsGenerating(false);
     }
@@ -455,12 +599,59 @@ export const CreateArtistPage: React.FC = () => {
                     </TabsContent>
 
                     <TabsContent value="ai" className="space-y-6">
+                      {/* AI Service Status */}
+                      <Card className="bg-neutral-800/50 border-cyan-500/20">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-lg font-mono text-cyan-400 flex items-center gap-2">
+                            <Wifi className="h-4 w-4" />
+                            AI Service Status
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="flex items-center justify-between p-2 bg-neutral-900/50 rounded">
+                              <span className="text-sm">Gemini</span>
+                              {aiServiceStatus.gemini ? (
+                                <CheckCircle className="h-4 w-4 text-green-500" />
+                              ) : (
+                                <WifiOff className="h-4 w-4 text-red-500" />
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between p-2 bg-neutral-900/50 rounded">
+                              <span className="text-sm">Nano Banana</span>
+                              {aiServiceStatus.nanobanana ? (
+                                <CheckCircle className="h-4 w-4 text-green-500" />
+                              ) : (
+                                <WifiOff className="h-4 w-4 text-red-500" />
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between p-2 bg-neutral-900/50 rounded">
+                              <span className="text-sm">Seedance</span>
+                              {aiServiceStatus.seedance ? (
+                                <CheckCircle className="h-4 w-4 text-green-500" />
+                              ) : (
+                                <WifiOff className="h-4 w-4 text-red-500" />
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between p-2 bg-neutral-900/50 rounded">
+                              <span className="text-sm">OpenAI</span>
+                              {aiServiceStatus.openai ? (
+                                <CheckCircle className="h-4 w-4 text-green-500" />
+                              ) : (
+                                <WifiOff className="h-4 w-4 text-red-500" />
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* AI Generation Options */}
                       <div className="space-y-4">
                         <Button
                           type="button"
                           onClick={generateAIBio}
-                          disabled={isGenerating}
-                          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                          disabled={isGenerating || !aiServiceStatus.gemini}
+                          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white disabled:opacity-50"
                         >
                           {isGenerating ? (
                             <>
@@ -475,25 +666,95 @@ export const CreateArtistPage: React.FC = () => {
                           )}
                         </Button>
 
+                        <div className="grid grid-cols-2 gap-3">
+                          <Button
+                            type="button"
+                            onClick={() => generateAIImage('nanobanana')}
+                            disabled={isGenerating || !aiServiceStatus.nanobanana}
+                            className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white disabled:opacity-50"
+                          >
+                            {isGenerating ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <>
+                                <Image className="mr-2 h-4 w-4" />
+                                Nano Banana
+                              </>
+                            )}
+                          </Button>
+
+                          <Button
+                            type="button"
+                            onClick={() => generateAIImage('seedance')}
+                            disabled={isGenerating || !aiServiceStatus.seedance}
+                            className="bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white disabled:opacity-50"
+                          >
+                            {isGenerating ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <>
+                                <Image className="mr-2 h-4 w-4" />
+                                Seedance
+                              </>
+                            )}
+                          </Button>
+                        </div>
+
                         <Button
                           type="button"
-                          onClick={generateAIImage}
-                          disabled={isGenerating}
-                          className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white"
+                          onClick={generateImageVariations}
+                          disabled={isGenerating || (!aiServiceStatus.nanobanana || !aiServiceStatus.seedance)}
+                          className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white disabled:opacity-50"
                         >
                           {isGenerating ? (
                             <>
                               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Generating Image...
+                              Generating Variations...
                             </>
                           ) : (
                             <>
-                              <Image className="mr-2 h-4 w-4" />
-                              Generate AI Image
+                              <Sparkles className="mr-2 h-4 w-4" />
+                              Generate Multiple Images
                             </>
                           )}
                         </Button>
                       </div>
+
+                      {/* Generation History */}
+                      {generationHistory.length > 0 && (
+                        <Card className="bg-neutral-800/50 border-cyan-500/20">
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-lg font-mono text-cyan-400 flex items-center gap-2">
+                              <AlertCircle className="h-4 w-4" />
+                              Recent Generations
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-2 max-h-48 overflow-y-auto">
+                              {generationHistory.slice(0, 5).map((gen) => (
+                                <div key={gen.id} className="p-2 bg-neutral-900/30 rounded text-sm">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-medium">{gen.type}</span>
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant={gen.success ? "default" : "destructive"} className="text-xs">
+                                        {gen.provider}
+                                      </Badge>
+                                      {gen.success ? (
+                                        <CheckCircle className="h-3 w-3 text-green-500" />
+                                      ) : (
+                                        <AlertCircle className="h-3 w-3 text-red-500" />
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="text-xs text-gray-400 mt-1">
+                                    {new Date(gen.timestamp).toLocaleTimeString()}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
                     </TabsContent>
                   </Tabs>
 

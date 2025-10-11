@@ -46,6 +46,8 @@ const handleValidationErrorDB = err => {
  */
 const handleJWTError = () => new AppError('Invalid token. Please log in again!', 401);
 const handleJWTExpiredError = () => new AppError('Your token has expired. Please log in again!', 401);
+const handleSyntaxError = () => new AppError('Invalid JSON payload', 400);
+const handleCSRFError = () => new AppError('Invalid CSRF token', 403);
 
 /**
  * Send error response in development
@@ -113,6 +115,8 @@ const errorHandler = (err, req, res, next) => {
         if (error.name === 'ValidationError') error = handleValidationErrorDB(error);
         if (error.name === 'JsonWebTokenError') error = handleJWTError();
         if (error.name === 'TokenExpiredError') error = handleJWTExpiredError();
+        if (error instanceof SyntaxError && 'body' in error) error = handleSyntaxError();
+        if (error.code === 'EBADCSRFTOKEN') error = handleCSRFError();
 
         sendErrorProd(error, res);
     }
